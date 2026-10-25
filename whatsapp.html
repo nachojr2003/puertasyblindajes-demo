@@ -1,0 +1,1320 @@
+<!doctype html>
+<html lang="es-PE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#1B110E">
+<title>Simulador de WhatsApp | Puertas y Blindajes</title>
+<link rel="icon" type="image/jpeg" href="assets/logo-pyb-para-centro-de-un-circulo-1-150x150.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Righteous&family=Roboto:wght@400;500;700&family=Saira+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Roboto de la web de la marca, ya capturada en assets/ (latin). Si faltara, cae a Google Fonts / sistema. */
+@font-face{font-family:'RobotoPYB';src:url('assets/roboto-kfo7cnqeu92fr1me7ksn66agldtyluama3yuba.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap;
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+/* ==========================================================================
+   Simulador de WhatsApp: demo de Puertas y Blindajes (asistente virtual con IA).
+   Autocontenido: HTML + CSS + JS vanilla. Sin frameworks ni CDN de scripts.
+
+   Perspectiva: esta pantalla es el TELEFONO DEL CLIENTE POTENCIAL conversando con Puertas y Blindajes.
+     dir:'in'  = el contacto escribe             -> burbuja VERDE a la derecha
+     dir:'out' = el asistente (IA) responde      -> burbuja BLANCA a la izquierda
+     dir:'pase'= tarjeta "Alerta para el equipo" (aviso del sistema, no es un mensaje)
+   El mensaje de bienvenida (`auto:true`) es local: lo manda el sistema, no el agente
+   (el agente NUNCA saluda: regla de oro 81). Es un triage neutro, no presupone linea.
+
+   Backend (mismo contrato que las demas demos de chat sin RAG):
+     POST {BASE}/puertasyblindajes-demo-agent
+       { message, sessionId, channel:'web', origin }  ->  { output }
+   Sesion nueva por escenario: pybdemo_<rand>. Jamas prefijos wa_/ig_/msg_/fb_.
+
+   Pruebas sin gastar IA:  ?mock=1  responde con un guion local (sin llamar al chat).
+   ========================================================================== */
+:root{
+  --bg:#1B110E; --bg2:#241713; --bg3:#2E1E19; --bgdeep:#120B09;
+  --rojo:#B60808; --rojo-hv:#D01414; --rojo-hi:#EF5B52; --rojo-bd:#D8382E;
+  --crema:#EAE5E0; --texto:#DFD4C9; --mute:#BBAB9E; --mute-2:#9E8D80;
+  --line:rgba(216,56,46,.46); --line-soft:rgba(223,212,201,.14);
+  --wa-header:#075e54; --wa-fondo:#e3dccd; --wa-out:#d9fdd3; --wa-in:#ffffff;
+  --wa-meta:#667781; --wa-tick:#53bdeb; --wa-ink:#111b21;
+  --caliente:#E5532D; --tibia:#E0A526; --fria:#7C98B3;
+  --head:'Righteous','Saira Condensed',Impact,'Arial Narrow',system-ui,sans-serif;
+  --cond:'Saira Condensed','Arial Narrow','Roboto Condensed',system-ui,sans-serif;
+  --sans:'RobotoPYB','Roboto',system-ui,-apple-system,'Segoe UI',Helvetica,Arial,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--crema);font-family:var(--sans);font-size:16px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;min-height:100dvh;display:flex;flex-direction:column}
+img{max-width:100%;height:auto;display:block}
+p,h1,h2,h3,h4,ol,ul{margin:0}
+ol,ul{padding:0;list-style:none}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+[hidden]{display:none !important}
+a{color:var(--rojo-hi)}
+:focus-visible{outline:3px solid var(--crema);outline-offset:2px;border-radius:8px}
+
+/* ---------- franja de demo ---------- */
+.aviso{background:var(--bgdeep);color:var(--mute);padding:7px 16px;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;text-align:center;border-bottom:1px solid var(--line-soft)}
+.aviso b{color:var(--rojo-hi);font-weight:800}
+.aviso .corto{display:none}
+
+/* ---------- barra superior ---------- */
+.top{background:var(--bg);border-top:3px solid var(--rojo);border-bottom:1px solid var(--line-soft);flex:none}
+.top-in{max-width:1180px;margin:0 auto;padding:8px 16px;display:flex;align-items:center;gap:12px}
+.top-in .logo{width:44px;height:44px;border-radius:50%;flex:none;object-fit:cover;background:#fff}
+.top-in .wm{height:24px;width:auto;flex:none}
+.top-in .quien{min-width:0}
+.top-in .quien b{display:block;font-family:var(--head);font-weight:400;font-size:14px;letter-spacing:.1em;color:var(--crema);line-height:1.2;text-transform:uppercase}
+.top-in .quien small{display:block;font-size:12.5px;color:var(--mute);font-weight:500}
+.top-sp{flex:1}
+.lnk{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 16px;border-radius:999px;border:1.5px solid var(--line);
+  background:transparent;color:var(--crema);font-family:var(--cond);font-weight:700;font-size:16px;letter-spacing:.02em;text-decoration:none;white-space:nowrap;cursor:pointer}
+.lnk:hover{border-color:var(--rojo-bd);color:#fff}
+.lnk.solid{background:var(--rojo);color:#fff;border-color:transparent}
+.lnk.solid:hover{background:var(--rojo-hv);color:#fff}
+.lnk.volver{border-color:transparent;color:var(--mute);padding:0 10px}
+.lnk.volver:hover{color:#fff}
+
+/* ---------- selector de escenario ---------- */
+.selector{background:var(--bg2);border-bottom:1px solid var(--line-soft);flex:none}
+.sel-in{max-width:1180px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap}
+.sel-lab{font-family:var(--cond);font-weight:700;font-size:16px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase}
+.chips{display:flex;gap:8px;flex-wrap:wrap;min-width:0}
+.chip{border:1.5px solid var(--rojo-bd);background:transparent;cursor:pointer;min-height:44px;padding:0 14px 0 8px;border-radius:999px;font-family:var(--cond);font-weight:600;font-size:16px;line-height:1.1;color:var(--crema);text-align:center;display:inline-flex;align-items:center;gap:8px}
+.chip .l{width:24px;height:24px;border-radius:50%;background:var(--rojo);color:#fff;font-family:var(--head);font-weight:400;font-size:12px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.chip[aria-pressed="true"]{background:var(--rojo);color:#fff;border-color:var(--rojo)}
+.chip[aria-pressed="true"] .l{background:#fff;color:var(--rojo)}
+.chip:not([aria-pressed="true"]):hover{background:rgba(182,8,8,.22)}
+.sel-info{font-size:13.5px;font-weight:400;color:var(--mute);min-width:0;flex:1 1 100%}
+
+/* ---------- layout ---------- */
+.wrap{flex:1;width:100%;max-width:1180px;margin:0 auto;padding:18px 16px;display:grid;grid-template-columns:minmax(0,1fr);gap:22px;align-content:start;min-height:0}
+@media (min-width:900px){
+  .wrap{grid-template-columns:372px minmax(0,1fr);align-items:start}
+  .lateral{position:sticky;top:16px}
+}
+
+/* ---------- panel lateral (escritorio) ---------- */
+.lateral{background:var(--bg2);border:1px solid var(--line-soft);border-radius:18px;padding:20px 20px 22px}
+.lateral h2{font-family:var(--head);font-weight:400;font-size:1.4rem;letter-spacing:.01em;line-height:1.18;text-transform:uppercase;color:var(--crema)}
+.lateral .sub{margin-top:8px;font-size:14.5px;color:var(--mute);line-height:1.55}
+.grp{margin-top:18px;padding-top:16px;border-top:1px solid var(--line-soft)}
+.grp h3{font-family:var(--cond);font-weight:700;font-size:17px;letter-spacing:.04em;text-transform:uppercase;color:var(--rojo-hi)}
+.grp .hint{margin-top:8px;font-size:13px;color:var(--mute-2);line-height:1.45}
+.rapidos{margin-top:10px;display:flex;flex-direction:column;gap:7px}
+.rapido{padding:10px 13px;border-radius:12px;border:1px solid var(--line-soft);background:var(--bg3);font-size:14.5px;font-weight:500;color:var(--crema);cursor:pointer;text-align:left;line-height:1.35;min-height:44px}
+.rapido:hover{border-color:var(--rojo-bd);color:#fff}
+.fld{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.fld input{flex:1 1 150px;padding:10px 12px;border:1px solid var(--line-soft);border-radius:12px;background:var(--bg);color:var(--crema);font-size:13px;-webkit-appearance:none;appearance:none;min-height:44px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.btn-s{min-height:44px;padding:0 20px;border:1.5px solid var(--rojo-bd);border-radius:999px;background:transparent;color:var(--crema);font-family:var(--cond);font-weight:700;font-size:16px;letter-spacing:.03em;cursor:pointer;line-height:1}
+.btn-s:hover{background:var(--rojo);color:#fff;border-color:var(--rojo)}
+.reparto{margin:12px 0 0;display:grid;gap:11px}
+.reparto li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start;font-size:14.5px;line-height:1.4;color:var(--texto)}
+.reparto .n{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--rojo-bd);color:var(--crema);font-family:var(--head);font-weight:400;font-size:.9rem;display:flex;align-items:center;justify-content:center;line-height:1}
+.reparto li.ed .n{background:var(--rojo);color:#fff;border-color:var(--rojo)}
+.reparto b{font-weight:700;color:var(--crema)}
+.priv{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 13px;font-size:13px;line-height:1.5;color:var(--texto);background:rgba(182,8,8,.12)}
+.priv b{color:var(--crema)}
+.estado-pase{margin-top:12px;border:1px dashed var(--line);border-radius:14px;padding:11px 14px;font-size:14px;color:var(--mute);line-height:1.45}
+.estado-pase b{display:block;color:var(--crema);font-weight:700;margin-bottom:2px}
+.estado-pase.hecho{border:1px solid var(--rojo-bd);background:rgba(182,8,8,.14);color:var(--crema)}
+.estado-pase.hecho b{color:#fff}
+.turnos{margin-top:12px;font-size:13px;color:var(--mute);display:flex;justify-content:space-between;gap:8px}
+.turnos b{color:var(--crema)}
+.lat-links{margin-top:16px;display:flex;flex-direction:column;gap:6px;font-size:14.5px;font-weight:700}
+.lat-links a{text-decoration:none}
+
+/* ---------- telefono ---------- */
+.fono{background:#0b0605;border-radius:28px;padding:9px;border:1px solid var(--line-soft);box-shadow:0 30px 70px -30px rgba(0,0,0,.95),0 0 0 1px rgba(182,8,8,.12);
+  display:flex;flex-direction:column;overflow:hidden;height:min(790px,calc(100dvh - 300px));min-height:560px;max-width:430px;width:100%;margin:0 auto}
+.pantalla{flex:1;display:flex;flex-direction:column;background:var(--wa-fondo);border-radius:20px;overflow:hidden;min-height:0;color:var(--wa-ink)}
+.status{background:var(--wa-header);color:#fff;display:flex;align-items:center;gap:8px;padding:7px 16px 5px;font-size:12px;font-weight:700}
+.status .sp{flex:1}
+.chat-hd{background:var(--wa-header);color:#fff;display:flex;align-items:center;gap:11px;padding:8px 12px 10px}
+.chat-hd .back{opacity:.9;flex:none}
+.chat-hd .av{width:42px;height:42px;border-radius:50%;flex:none;background:#fff;object-fit:cover}
+.chat-hd .quien{flex:1;min-width:0}
+.chat-hd .quien b{display:flex;align-items:center;gap:6px;font-size:15.5px;font-weight:700;line-height:1.2;white-space:nowrap}
+.chat-hd .quien small{display:block;font-size:12.5px;color:rgba(255,255,255,.84);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-hd .ico{display:flex;gap:16px;opacity:.92;flex:none;padding-right:2px}
+
+.hilo{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:12px 8px 14px;min-height:0;background-color:var(--wa-fondo);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23cdc4b2' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round' opacity='.75'%3E%3Cpath d='M16 24h14M23 17v14'/%3E%3Ccircle cx='108' cy='30' r='8'/%3E%3Cpath d='M34 70c7-9 16-9 23 0'/%3E%3Cpath d='M86 86l9 9 16-18'/%3E%3Cpath d='M20 108h18v11H29l-5 6v-6h-4z'/%3E%3Cpath d='M118 116h11M123.5 110.5v11'/%3E%3Cpath d='M62 118h16'/%3E%3Cpath d='M70 40v12'/%3E%3C/g%3E%3C/svg%3E")}
+.demo-nota{display:block;max-width:94%;margin:2px auto 10px;background:#fff8c9;color:#54656f;border-radius:8px;padding:8px 11px;font-size:12.5px;line-height:1.45;text-align:center;font-weight:500;box-shadow:0 1px 1px rgba(11,20,26,.13)}
+.demo-nota b{font-weight:700;color:#3b4a54}
+.demo-nota.mockn{background:#fde7d6;color:#7a3a0b}
+.dia{display:block;width:fit-content;margin:8px auto 8px;background:#fff;color:var(--wa-meta);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;box-shadow:0 1px 1px rgba(11,20,26,.13)}
+.sis{display:block;width:fit-content;max-width:90%;margin:8px auto 10px;background:#e7e2db;color:#3b4a54;border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.45;text-align:center;box-shadow:0 1px 1px rgba(11,20,26,.1)}
+.sis.err{background:#fdecea;color:#7a1d17}
+.sis button{display:block;margin:8px auto 0;min-height:44px;padding:0 20px;border-radius:999px;border:2px solid #7a1d17;background:#fff;color:#7a1d17;font-weight:800;font-size:14px;cursor:pointer}
+.sis button:hover{background:#7a1d17;color:#fff}
+
+.msg{width:fit-content;max-width:84%;margin:0 6px 8px;padding:6px 9px 7px;border-radius:8px;position:relative;box-shadow:0 1px 1px rgba(11,20,26,.13);
+  font-size:15.5px;line-height:1.42;color:var(--wa-ink);overflow-wrap:anywhere}
+.msg.nuevo{animation:aparece .18s ease-out}
+@keyframes aparece{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg.del-neg{background:var(--wa-in);margin-right:auto;border-top-left-radius:0}
+.msg.del-cliente{background:var(--wa-out);margin-left:auto;border-top-right-radius:0}
+.msg .ln{display:block;white-space:pre-wrap}
+.msg .ln.sep{height:.85em}
+.msg .ln.li{padding-left:1.15em;text-indent:-1.15em}
+.msg .txt a{color:#027eb5;text-decoration:underline;overflow-wrap:anywhere}
+.msg strong{font-weight:700}
+.msg .pie{float:right;margin:6px 0 -2px 10px;display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--wa-meta);line-height:1;user-select:none;white-space:nowrap}
+.msg .pie .ticks{color:var(--wa-tick)}
+.msg .pie .ticks.gris{color:#8696a0}
+.msg::after{content:"";display:block;clear:both}
+.msg.del-neg::before,.msg.del-cliente::before{content:"";position:absolute;top:0;width:9px;height:13px}
+.msg.del-neg::before{left:-8px;background:var(--wa-in);clip-path:polygon(100% 0,0 0,100% 100%)}
+.msg.del-cliente::before{right:-8px;background:var(--wa-out);clip-path:polygon(0 0,100% 0,0 100%)}
+/* CSS defensivo: emojis convertidos en <img> por librerias no pueden crecer */
+.msg img.emoji,.msg .txt img{max-width:1.2em !important;max-height:1.2em !important;display:inline-block !important;vertical-align:text-bottom !important}
+
+/* mensaje de bienvenida automatico (lo manda el sistema, no el agente) */
+.msg.meta{padding:6px 9px 7px}
+.msg.meta .txt{display:block}
+.tag-auto{display:block;margin:5px 0 0;font-size:11.5px;color:var(--wa-meta);font-style:italic;line-height:1.35}
+
+.typing{display:flex;gap:4px;align-items:center;width:fit-content;margin:0 6px 8px;padding:11px 13px;background:var(--wa-in);border-radius:8px;border-top-left-radius:0;box-shadow:0 1px 1px rgba(11,20,26,.13)}
+.typing i{width:7px;height:7px;border-radius:50%;background:#9aa6ab;animation:pulso 1.1s infinite}
+.typing i:nth-child(2){animation-delay:.16s}.typing i:nth-child(3){animation-delay:.32s}
+@keyframes pulso{0%,60%,100%{opacity:.35;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+
+/* tarjeta: alerta para el equipo */
+.pase{margin:10px 8px 14px;background:var(--bg);color:var(--crema);border:1.5px solid var(--rojo-bd);border-radius:16px;padding:14px 15px 13px;box-shadow:0 8px 24px -10px rgba(0,0,0,.6)}
+.pase.nuevo{animation:aparece .25s ease-out}
+.pase .kick{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--rojo-hi)}
+.pase .kick .pulso{width:9px;height:9px;border-radius:50%;background:var(--caliente);box-shadow:0 0 0 0 rgba(229,83,45,.6);animation:alerta 1.6s infinite}
+.pase.sinalerta .kick .pulso{background:var(--fria);animation:none}
+@keyframes alerta{0%{box-shadow:0 0 0 0 rgba(229,83,45,.55)}70%{box-shadow:0 0 0 9px rgba(229,83,45,0)}100%{box-shadow:0 0 0 0 rgba(229,83,45,0)}}
+.pase .cab{display:flex;align-items:center;gap:10px;margin-top:7px}
+.pase .ok{width:26px;height:26px;border-radius:50%;background:var(--rojo);color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.pase.sinalerta .ok{background:#4a5560}
+.pase h4{margin:0;font-family:var(--head);font-weight:400;font-size:1.02rem;line-height:1.2;flex:1;color:#fff;letter-spacing:.01em}
+.pase .cal{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:999px;color:#1B110E;white-space:nowrap}
+.pase .cal.caliente{background:var(--caliente);color:#fff}
+.pase .cal.tibia{background:var(--tibia)}
+.pase .cal.fria{background:var(--fria);color:#1B110E}
+.pase .cal.nd{background:transparent;border:1px solid var(--line);color:var(--mute);letter-spacing:.02em;text-transform:none;font-weight:700}
+.pase .res{margin-top:10px;font-size:12.5px;font-weight:700;color:var(--mute)}
+.pase dl{margin:6px 0 0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 12px;font-size:14px;line-height:1.4}
+.pase dt{color:var(--mute);font-weight:500}
+.pase dd{margin:0;font-weight:700;overflow-wrap:anywhere}
+.pase .vacio{margin-top:8px;font-size:13.5px;color:var(--mute);line-height:1.45}
+.pase .tomar{margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pase .tomar button{min-height:44px;padding:0 18px;border-radius:999px;border:0;background:var(--rojo);color:#fff;font-family:var(--cond);font-weight:700;font-size:16px;letter-spacing:.03em;cursor:pointer}
+.pase .tomar button:hover{background:var(--rojo-hv)}
+.pase .tomar span{font-size:12.5px;color:var(--mute);line-height:1.35;flex:1 1 140px}
+.pase .tomado{margin-top:12px;padding:9px 12px;border-radius:12px;background:rgba(182,8,8,.16);border:1px solid var(--line);font-size:13.5px;font-weight:700;color:var(--crema);line-height:1.4}
+.pase .crm{display:inline-flex;align-items:center;min-height:44px;margin-top:10px;font-size:13.5px;font-weight:700;color:var(--rojo-hi);text-decoration:underline;text-underline-offset:3px}
+.pase .nota{margin-top:6px;padding-top:9px;border-top:1px solid var(--line-soft);font-size:12px;color:var(--mute-2);line-height:1.4}
+
+.rapidos-m{display:none;gap:7px;padding:8px 8px 0;background:#f0f2f5;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.rapidos-m::-webkit-scrollbar{display:none}
+.rapidos-m .rapido{white-space:nowrap;padding:8px 14px;border-radius:999px;font-size:14px;flex:none;background:#fff;color:var(--wa-ink);border:1.5px solid #d6dbdf;min-height:44px;font-weight:500}
+.rapidos-m .rapido:hover{border-color:var(--rojo);color:var(--wa-ink)}
+
+.escribir{display:flex;align-items:flex-end;gap:7px;padding:7px 8px 9px;background:#f0f2f5}
+.caja-txt{flex:1;display:flex;align-items:flex-end;gap:8px;background:#fff;border-radius:22px;padding:10px 13px;min-width:0}
+.caja-txt svg{flex:none;color:#8696a0;margin-bottom:2px}
+.caja-txt textarea{flex:1;border:0;outline:0;resize:none;overflow:hidden;max-height:100px;font-size:16px;line-height:1.4;background:transparent;color:var(--wa-ink);padding:0;min-width:0}
+.caja-txt textarea::placeholder{color:#6b7a84}
+.enviar{flex:none;width:46px;height:46px;border-radius:50%;border:0;background:var(--rojo);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.enviar:hover{background:var(--rojo-hv)}
+.enviar:disabled{opacity:.5;cursor:progress}
+
+footer{border-top:1px solid var(--line-soft);background:var(--bgdeep);flex:none}
+.foot{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;gap:6px 18px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--mute-2)}
+.foot b{color:var(--mute)}
+.foot a{color:var(--mute);text-decoration:none;font-weight:700}
+.foot a:hover{color:#fff;text-decoration:underline}
+.foot .sp{flex:1}
+
+/* ---------- movil: la pantalla es la app ---------- */
+@media (max-width:899px){
+  html{overscroll-behavior:none}
+  body{height:100dvh;overflow:hidden}
+  .aviso{padding:5px 10px;font-size:10px;letter-spacing:.05em}
+  .aviso .largo{display:none}
+  .aviso .corto{display:inline}
+  .top-in{padding:4px 12px;gap:8px}
+  .top-in .logo{width:34px;height:34px}
+  .top-in .wm{display:none}
+  .top-in .quien{display:block;min-width:0;overflow:hidden}
+  .top-in .quien small{display:none}
+  .top-in .quien b{font-size:11.5px;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lnk{min-height:44px;padding:0 12px;font-size:15px}
+  .lnk .largo{display:none}
+  .lnk.volver{display:none}
+  .sel-in{padding:6px 12px;gap:6px;flex-wrap:nowrap}
+  .sel-lab{display:none}
+  .chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -12px;padding:0 12px;flex:1}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{white-space:nowrap;flex:none;padding:0 13px 0 7px;font-size:15px}
+  .sel-info{display:none}
+  .wrap{padding:0;display:block;min-height:0;overflow:hidden}
+  .lateral{display:none}
+  .fono{height:100%;max-width:none;border-radius:0;padding:0;box-shadow:none;border:0;background:transparent;min-height:0}
+  .pantalla{border-radius:0}
+  .status{display:none}
+  .rapidos-m{display:flex}
+  .escribir{padding-bottom:calc(9px + env(safe-area-inset-bottom,0px))}
+  .msg{max-width:88%}
+  .foot{padding:6px 12px;font-size:11px;justify-content:space-between;flex-wrap:nowrap}
+  .foot .sp,.foot .largo{display:none}
+}
+.lnk .corto{display:none}
+@media (min-width:900px){ .foot .corto{display:none} }
+@media (max-width:899px){ .lnk .corto{display:inline} }
+@media (prefers-reduced-motion:reduce){ *{animation:none !important} }
+</style>
+</head>
+<body>
+
+<div class="aviso"><b>Demo</b> <span class="largo">&middot; simulaci&oacute;n: no escribas datos reales (DNI, correo, cuentas ni contrase&ntilde;as) &middot; no es el WhatsApp real y no se env&iacute;a nada a nadie &middot; hecha por IJV Agency</span><span class="corto">&middot; simulaci&oacute;n, no es el WhatsApp real</span></div>
+
+<header class="top">
+  <div class="top-in">
+    <img class="logo" id="top-logo" src="assets/logo-pyb-para-centro-de-un-circulo-1-150x150.jpg" width="44" height="44" alt="" onerror="this.style.display='none'">
+    <img class="wm" src="assets/puertas-y-blindajes-rojo-contorno-negro.png" width="136" height="24" alt="Puertas y Blindajes" onerror="this.style.display='none'">
+    <div class="quien"><b>Simulador de WhatsApp</b><small>Asistente virtual (IA) de Puertas y Blindajes</small></div>
+    <div class="top-sp"></div>
+    <a class="lnk volver" href="./">&larr; Volver al sitio</a>
+    <a class="lnk" href="panel.html"><span class="largo">Ver el CRM</span><span class="corto">CRM</span></a>
+    <button class="lnk solid" id="btn-reiniciar-top" type="button">Reiniciar<span class="largo">&nbsp;chat</span></button>
+  </div>
+</header>
+
+<div class="selector">
+  <div class="sel-in">
+    <span class="sel-lab">Simular:</span>
+    <div class="chips" role="group" aria-label="Escenario">
+      <button class="chip" type="button" data-esc="seg" aria-pressed="false"><span class="l">A</span>Quiero una puerta de seguridad para mi casa</button>
+      <button class="chip" type="button" data-esc="corta" aria-pressed="false"><span class="l">B</span>Necesito puertas cortafuego para mi edificio</button>
+      <button class="chip" type="button" data-esc="precio" aria-pressed="false"><span class="l">C</span>&iquest;Cu&aacute;nto cuesta una puerta blindada?</button>
+      <button class="chip" type="button" data-esc="vano" aria-pressed="false"><span class="l">D</span>Ya med&iacute; el vano y tengo fotos</button>
+      <button class="chip" type="button" data-esc="obj" aria-pressed="false"><span class="l">E</span>&iquest;Por qu&eacute; cuesta m&aacute;s que otras?</button>
+    </div>
+    <p class="sel-info" id="sel-info"></p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ============ panel lateral (escritorio) ============ -->
+  <aside class="lateral">
+    <h2>As&iacute; lo ve tu cliente potencial</h2>
+    <p class="sub">Elige un caso: el bot&oacute;n escribe el primer mensaje por ti, como lo har&iacute;a alguien que lleg&oacute; por tu anuncio o tu web. Despu&eacute;s sigue la conversaci&oacute;n t&uacute; mismo.</p>
+
+    <div class="grp">
+      <h3>C&oacute;mo probarlo</h3>
+      <ol class="reparto">
+        <li><span class="n">1</span><span><b>Elige un caso</b> arriba (A a E) o escribe tu propio mensaje en la caja de texto.</span></li>
+        <li><span class="n">2</span><span><b>Sigue la charla</b> con los mensajes r&aacute;pidos de abajo o con tus palabras. El asistente pregunta <b>un dato por mensaje</b>.</span></li>
+        <li><span class="n">3</span><span><b>Mira la alerta:</b> cuando el caso queda listo aparece la tarjeta &laquo;Alerta para el equipo&raquo;, con la calificaci&oacute;n. Despu&eacute;s &aacute;brelo en el CRM.</span></li>
+        <li><span class="n">4</span><span><b>Reinicia</b> para probar otro caso con una conversaci&oacute;n limpia.</span></li>
+      </ol>
+      <div class="priv"><b>Es una demo.</b> Escribe solo datos inventados: nada de DNI, correo, cuentas bancarias ni contrase&ntilde;as. Lo que escribas lo lee un asistente de IA de prueba y puede verse en el CRM de demostraci&oacute;n.</div>
+    </div>
+
+    <div class="grp">
+      <h3>Qu&eacute; hace cada quien</h3>
+      <ol class="reparto">
+        <li><span class="n">1</span><span><b>Asistente (IA):</b> responde al instante, a cualquier hora, sin dar nada por hecho: primero entiende qu&eacute; puerta, para qu&eacute; y d&oacute;nde.</span></li>
+        <li><span class="n">2</span><span><b>Asistente (IA):</b> aclara que son puertas a medida, califica Caliente / Tibio / Fr&iacute;o y propone una visita al showroom o una llamada. No cotiza en firme ni inventa especificaciones.</span></li>
+        <li class="ed"><span class="n">3</span><span><b>Asesor:</b> recibe la oportunidad lista, con medidas, fotos y ubicaci&oacute;n. La cotizaci&oacute;n, la visita t&eacute;cnica y el cobro los hace &eacute;l.</span></li>
+      </ol>
+      <div class="estado-pase" id="estado-pase"><b>Alerta al equipo: pendiente</b>Todav&iacute;a no hay ninguna oportunidad lista para el asesor.</div>
+      <div class="turnos"><span>Turnos de esta conversaci&oacute;n</span><b id="turnos">0 de 18</b></div>
+    </div>
+
+    <div class="grp">
+      <h3>Mensajes r&aacute;pidos (datos ficticios)</h3>
+      <div class="rapidos" id="rapidos-d"></div>
+      <p class="hint">Se escriben en la caja de texto; t&uacute; decides cu&aacute;ndo enviarlos.</p>
+    </div>
+
+    <div class="grp">
+      <h3>Conversaci&oacute;n</h3>
+      <div class="fld"><input type="text" id="in-sesion" class="mono" aria-label="Identificador de la conversaci&oacute;n" readonly></div>
+      <div class="fld"><button class="btn-s" id="btn-reiniciar" type="button">Reiniciar chat</button></div>
+      <p class="hint">Empieza un hilo limpio, con el mismo caso (sin enviar nada).</p>
+    </div>
+
+    <div class="lat-links">
+      <a href="panel.html">Ver c&oacute;mo queda en el CRM &rarr;</a>
+      <a href="./">&larr; Volver al sitio</a>
+    </div>
+  </aside>
+
+  <!-- ============ telefono ============ -->
+  <div class="fono">
+    <div class="pantalla">
+
+      <div class="status">
+        <span id="st-hora">--:--</span>
+        <span class="sp"></span>
+        <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="4.5" y="5" width="3" height="6" rx="1"/><rect x="9" y="2.5" width="3" height="8.5" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
+        <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 5.2C3 3.1 5.4 2 8 2s5 1.1 7 3.2"/><path d="M3.6 7.7C4.9 6.4 6.4 5.7 8 5.7s3.1.7 4.4 2"/><path d="M6.3 10.2c.5-.5 1-.8 1.7-.8s1.2.3 1.7.8"/></svg>
+        <svg width="24" height="12" viewBox="0 0 24 12" aria-hidden="true"><rect x=".7" y=".7" width="19" height="10.6" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".6"/><rect x="2.2" y="2.2" width="14.5" height="7.6" rx="1.5" fill="currentColor"/><path d="M21.4 4.2v3.6c1-.3 1.5-.8 1.5-1.8s-.5-1.5-1.5-1.8z" fill="currentColor" opacity=".6"/></svg>
+      </div>
+
+      <div class="chat-hd">
+        <svg class="back" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+        <img class="av" id="hd-av" src="assets/logo-pyb-para-centro-de-un-circulo-1-150x150.jpg" width="42" height="42" alt="">
+        <div class="quien">
+          <b>Puertas y Blindajes <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#25d366"/><path d="M7 12.5l3.2 3.2L17 8.8" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></b>
+          <small id="hd-estado">asistente virtual (IA)</small>
+        </div>
+        <div class="ico">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.2a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/></svg>
+          <svg width="5" height="19" viewBox="0 0 5 19" fill="currentColor" aria-hidden="true"><circle cx="2.5" cy="2.5" r="2.1"/><circle cx="2.5" cy="9.5" r="2.1"/><circle cx="2.5" cy="16.5" r="2.1"/></svg>
+        </div>
+      </div>
+
+      <div class="hilo" id="hilo" role="log" aria-live="polite" aria-label="Conversaci&oacute;n de WhatsApp"></div>
+
+      <div class="rapidos-m" id="rapidos-m"></div>
+
+      <form class="escribir" id="form">
+        <div class="caja-txt">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M8.4 14.2c.9 1.2 2.1 1.8 3.6 1.8s2.7-.6 3.6-1.8" stroke-linecap="round"/><circle cx="9" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1.1" fill="currentColor" stroke="none"/></svg>
+          <textarea id="in-msg" rows="1" placeholder="Mensaje" autocomplete="off" aria-label="Mensaje"></textarea>
+        </div>
+        <button class="enviar" id="btn-enviar" type="submit" aria-label="Enviar mensaje">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.3 21.3l19.4-8.7c.9-.4.9-1.7 0-2.1L2.3 1.8c-.8-.4-1.6.3-1.4 1.1L3 10.3c.1.4.4.6.8.7l8.5 1-8.5 1c-.4 0-.7.3-.8.7L.9 20.2c-.2.8.6 1.5 1.4 1.1z"/></svg>
+        </button>
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="foot">
+    <span><span class="corto">Demo de <b>IJV Agency</b></span><span class="largo">Simulador de demostraci&oacute;n preparado por <b>IJV Agency</b> para Puertas y Blindajes. Sitio de muestra: no es la web oficial, no es un WhatsApp real y no se env&iacute;a nada a nadie.</span></span>
+    <span class="sp"></span>
+    <a href="https://ijvagency.com/" target="_blank" rel="noopener">Powered by IJV</a>
+  </div>
+</footer>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------------- backend ---------------- */
+  var BASE_DEF = 'https://meta.ijvagency.com/webhook';
+  var qs = new URLSearchParams(location.search);
+  /* ?mock=1 -> guion local, NO llama al chat (para probar el diseno sin gastar IA) */
+  var MOCK = qs.get('mock') === '1';
+  /* El override ?api= solo se acepta sirviendo en local (pruebas contra un stub).
+     En produccion la pagina siempre habla con el webhook real. */
+  var esLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  var BASE = (esLocal && qs.get('api')) ? qs.get('api').replace(/\/$/,'') : BASE_DEF;
+  var EP_CHAT = BASE + '/puertasyblindajes-demo-agent';
+
+  var TZ = 'America/Lima';
+  var TIMEOUT = 45000;      /* el agente con catalogo inline puede tardar */
+  var REINTENTOS = 1;       /* un reintento automatico; luego el boton Reintentar: nada de loops */
+  var MAX_TURNOS = 18;      /* el Security del chat corta en 20 por sesion: se frena antes */
+  var K = 'pybdemo:v1';     /* sessionStorage: estable por pestana */
+
+  var BIENVENIDA = 'Hola, soy el asistente virtual (IA) de Puertas y Blindajes. Te ayudo a encontrar la puerta adecuada: ¿buscas algo para tu casa, tu negocio o una obra?';
+  var NOTA_DEMO = 'Simulas a un cliente potencial. Elige un caso arriba, sigue con los mensajes rápidos o escribe lo tuyo. Usa solo datos inventados: nada de DNI, correo, cuentas ni contraseñas.';
+
+  /* ---------------- escenarios ----------------
+     Cada boton SOLO escribe y envia el primer mensaje literal; lo que responde el
+     asistente es del asistente (o del guion local con ?mock=1). Los mensajes rapidos
+     siguen el orden de las preguntas del asistente y usan datos ficticios. */
+  var ESCENARIOS = {
+    libre: {
+      primero: '',
+      info: 'Escribe tu propio mensaje o elige un caso. El asistente hace un triage neutro: no da por hecho si buscas seguridad, cortafuego u otra línea.',
+      rapidos: [
+        'Hola, buenas tardes',
+        'Busco una puerta para mi negocio',
+        'Quiero cotizar una puerta'
+      ]
+    },
+    seg: {
+      primero: 'Quiero una puerta de seguridad para mi casa',
+      info: 'Caso residencial. El asistente pregunta un dato por mensaje (distrito, medidas, fotos, puerta nueva o reemplazo) y, antes de agendar, aclara que es una puerta a medida y que la inversión la define el asesor.',
+      rapidos: [
+        'En San Isidro',
+        'Todavía no tengo las medidas, ¿pueden ir a medir?',
+        'No tengo fotos por ahora',
+        'Sería una puerta nueva',
+        'Sí, va por ahí',
+        'Mi nombre es Lucía Paredes Quispe',
+        'Es el mismo número de este WhatsApp',
+        'El jueves a las 11 de la mañana'
+      ]
+    },
+    corta: {
+      primero: 'Necesito puertas cortafuego para mi edificio',
+      info: 'Caso cortafuego. El asistente no inventa resistencia al fuego ni normas: eso lo confirma el asesor. Pregunta si es un edificio ya construido o una obra y sigue de a un dato.',
+      rapidos: [
+        'Es un proyecto en obra',
+        'En Surquillo',
+        'Aún no tenemos las medidas',
+        'No tenemos fotos todavía',
+        'Sería puerta nueva',
+        'Sí, entiendo que es a medida',
+        'Mi nombre es Carlos Mendoza Rojas',
+        'Mi número es 900 000 022',
+        'El viernes a las 3 de la tarde'
+      ]
+    },
+    precio: {
+      primero: '¿Cuánto cuesta una puerta blindada?',
+      info: 'El curioso. No hay precio único: el asistente lo dice con honestidad (puerta de acero a medida, inversión importante) sin inventar cifras. Si busca algo muy económico, queda Frío y no se agenda.',
+      rapidos: [
+        'Es para mi casa',
+        'En Los Olivos',
+        'Algo económico, ¿tienen de menos de mil soles?',
+        'Solo quería saber el precio',
+        'Gracias, lo pienso'
+      ]
+    },
+    vano: {
+      primero: 'Ya medí el vano y tengo fotos',
+      info: 'El caliente. Ya midió y tiene fotos: el asistente no repite lo que ya dijo y lo lleva rápido a una visita al showroom o a una llamada del asesor.',
+      rapidos: [
+        'Seguridad, para mi casa',
+        'En Jesús María',
+        'Mide 90 por 210',
+        'Es un reemplazo de la puerta que tengo',
+        'Sí, entiendo y va por ahí',
+        'Mi nombre es Jorge Salazar Ríos',
+        'Es el mismo número de este WhatsApp',
+        'El miércoles a las 4 de la tarde'
+      ]
+    },
+    obj: {
+      primero: '¿Por qué cuesta más que otras?',
+      info: 'La objeción. El asistente no inventa cifras ni especificaciones: explica qué se compara y deja el detalle técnico al asesor. Con una ciudad de provincia, la cobertura de instalación la confirma el asesor.',
+      rapidos: [
+        'Estoy comparando una de seguridad',
+        'Es para mi negocio',
+        'En Arequipa',
+        'Ya medí el vano: 100 por 220',
+        'No tengo fotos aún',
+        'Quiero reemplazar la que tengo',
+        'Sí, entiendo que es una inversión',
+        'Mi nombre es Rosa Huamán Torres',
+        'Es el mismo número de este WhatsApp',
+        'Mañana a las 10 de la mañana'
+      ]
+    }
+  };
+
+  /* ---------------- utilidades ---------------- */
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  /* Jamas wa_/ig_/msg_/fb_ ni eval_/smoke: el prefijo es propio de la demo */
+  function nuevaSesion(){ return 'pybdemo_' + Math.random().toString(16).slice(2,10) + Date.now().toString(36).slice(-4); }
+
+  function hora(v){
+    var d = (v instanceof Date) ? v : (v ? new Date(v) : new Date());
+    if(isNaN(d)) d = new Date();
+    var s;
+    try{
+      s = new Intl.DateTimeFormat('es-PE',{timeZone:TZ,hour:'numeric',minute:'2-digit',hour12:true}).format(d);
+    }catch(e){
+      var h=d.getHours(), m=('0'+d.getMinutes()).slice(-2), t=h<12?'a':'p';
+      h = h%12; if(h===0) h=12;
+      s = h+':'+m+' '+t+'. m.';
+    }
+    return s.replace(/[  ]/g,' ').replace(/\s*\b([APap])\.?\s*[Mm]\.?/, function(_,l){
+      return ' ' + l.toLowerCase() + '. m.';
+    });
+  }
+  function diaLargo(d){
+    try{ return new Intl.DateTimeFormat('es-PE',{timeZone:TZ,weekday:'long',day:'numeric',month:'long'}).format(d); }
+    catch(e){ return 'hoy'; }
+  }
+  function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+  function etiquetaHora(){ return hora(new Date()); }
+
+  /* ---------------- estado (sessionStorage, con respaldo en memoria) ---------------- */
+  function lee(){ try{ return JSON.parse(sessionStorage.getItem(K) || 'null'); }catch(e){ return null; } }
+  function guarda(){
+    try{
+      sessionStorage.setItem(K, JSON.stringify({ esc:st.esc, sesion:st.sesion, msgs:st.msgs.slice(-80), mock:st.mock, mockOn:MOCK, t0:st.t0 }));
+    }catch(e){}
+  }
+  var prev = lee();
+  var st = {
+    esc: (prev && ESCENARIOS[prev.esc]) ? prev.esc : 'libre',
+    sesion: '', msgs: [], mock: { paso:'inicio', datos:{}, fallos:0 }, t0: Date.now(),
+    enVuelo:false, esperando:false, lleno:false
+  };
+  /* si cambia ?mock=1 entre cargas, no se mezclan hilos reales con guion local */
+  if(prev && prev.sesion && Array.isArray(prev.msgs) && !!prev.mockOn === MOCK){
+    st.sesion = prev.sesion; st.msgs = prev.msgs; if(prev.mock) st.mock = prev.mock; if(prev.t0) st.t0 = prev.t0;
+  }else{
+    st.sesion = nuevaSesion();
+  }
+
+  /* ---------------- red ---------------- */
+  function post(url, body, ms){
+    var ctl = ('AbortController' in window) ? new AbortController() : null;
+    var to = setTimeout(function(){ if(ctl) ctl.abort(); }, ms||TIMEOUT);
+    return fetch(url,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body), signal:ctl?ctl.signal:undefined, cache:'no-store'
+    }).then(function(r){
+      clearTimeout(to);
+      return r.text().then(function(t){
+        var j=null; try{ j=t?JSON.parse(t):null; }catch(e){}
+        if(!r.ok){ var err=new Error('HTTP '+r.status); err.status=r.status; err.cuerpo=j||t; throw err; }
+        return j||{};
+      });
+    }, function(e){ clearTimeout(to); throw e; });
+  }
+  /* Un reintento solo ante fallos transitorios (red, 5xx). Un 4xx no se reintenta. */
+  function postConReintento(url, body, intento){
+    intento = intento || 0;
+    return post(url, body).catch(function(e){
+      var transitorio = !e.status || e.status >= 500;
+      if(transitorio && intento < REINTENTOS) return postConReintento(url, body, intento+1);
+      throw e;
+    });
+  }
+
+  /* ---------------- formato del texto (estilo WhatsApp) ----------------
+     Se escapa SIEMPRE primero (XSS) y recien despues se reponen negritas,
+     cursivas, tachado, vinetas y enlaces. */
+  function enLinea(l){
+    var h = esc(l);
+    h = h.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    h = h.replace(/(^|[^\w*])\*([^*\n]+)\*(?![\w*])/g, '$1<strong>$2</strong>');
+    h = h.replace(/(^|[^\w_])_([^_\n]+)_(?![\w_])/g, '$1<em>$2</em>');
+    h = h.replace(/(^|[^\w~])~([^~\n]+)~(?![\w~])/g, '$1<s>$2</s>');
+    return h;
+  }
+  function fmt(texto){
+    var s = String(texto==null?'':texto).replace(/\r\n?/g,'\n');
+    s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1: $2');   /* [txt](url) -> txt: url */
+    return s.split('\n').map(function(l){
+      if(!l.trim()) return '<span class="ln sep"></span>';
+      var m = /^\s*[-•*]\s+(.*)$/.exec(l);
+      if(m) return '<span class="ln li">• ' + enLinea(m[1]) + '</span>';
+      var n = /^\s*(\d{1,2})[.)]\s+(.*)$/.exec(l);
+      if(n) return '<span class="ln li">' + esc(n[1]) + '. ' + enLinea(n[2]) + '</span>';
+      return '<span class="ln">' + enLinea(l) + '</span>';
+    }).join('');
+  }
+
+  /* Enlaces clicables por DOM: `a.href` por propiedad y el texto por textContent;
+     la regex exige http(s): nada de `javascript:` ni `data:`. */
+  var RE_URL = /https?:\/\/[^\s<>"']+/g;
+  var CIERRES = '.,;:!?)]}»"\'';
+  function enlaza(root){
+    var textos = [], w, n;
+    try{ w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false); }catch(e){ return; }
+    while((n = w.nextNode())) if(n.nodeValue && n.nodeValue.indexOf('http') >= 0) textos.push(n);
+    textos.forEach(function(nodo){
+      var t = nodo.nodeValue, frag = document.createDocumentFragment(), i = 0, m, hubo = false;
+      RE_URL.lastIndex = 0;
+      while((m = RE_URL.exec(t)) !== null){
+        var url = m[0], cola = '';
+        while(url.length && CIERRES.indexOf(url.charAt(url.length-1)) >= 0){
+          cola = url.charAt(url.length-1) + cola;
+          url = url.slice(0,-1);
+        }
+        if(!url) continue;
+        if(m.index > i) frag.appendChild(document.createTextNode(t.slice(i, m.index)));
+        var a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = url;
+        frag.appendChild(a);
+        i = m.index + m[0].length - cola.length;
+        hubo = true;
+      }
+      if(!hubo) return;
+      if(i < t.length) frag.appendChild(document.createTextNode(t.slice(i)));
+      nodo.parentNode.replaceChild(frag, nodo);
+    });
+  }
+
+  /* ---------------- alerta al equipo: lectura del texto del agente ----------------
+     Solo se muestra lo que el agente REALMENTE escribio. Se leen:
+       (a) lineas "Etiqueta: valor" del bloque «Confirmo tus datos» (2 o mas seguidas, o de etiqueta conocida);
+       (b) el resumen canonico del marcador interno, en una sola linea:
+           Calificación: Caliente; Línea: …; Uso: …; Ubicación: …; Medidas: …; Fotos: …; Obra: …; Inversión: …
+     Si no se puede leer nada, la tarjeta dice que el equipo recibio el chat y ya: no se inventa
+     ningun dato. Lo que falte sale como «—» solo en el CRM; aqui simplemente no se muestra.
+     La calificacion NUNCA se le dice a la persona: se quita del texto visible (quitaMarcas). */
+  var CAMPOS = [
+    { k:'nombre',   o:1,  et:'Nombre',           re:/^(nombre|nombre completo|cliente)$/ },
+    { k:'linea',    o:2,  et:'Línea',            re:/^(linea|que buscas|que busca|tipo de puerta|puerta|producto|interes)$/ },
+    { k:'uso',      o:3,  et:'Uso',              re:/^(uso|para que|destino|tipo de uso)$/ },
+    { k:'ubic',     o:4,  et:'Ubicación',        re:/^(ubicacion|distrito|ciudad|distrito o ciudad|zona|lugar)$/ },
+    { k:'medidas',  o:5,  et:'Medidas del vano', re:/^(medidas|medidas del vano|medida|vano)$/ },
+    { k:'fotos',    o:6,  et:'Fotos',            re:/^(fotos|fotografias)$/ },
+    { k:'obra',     o:7,  et:'Obra de albañilería', re:/^(obra|obra de albanileria|albanileria|requiere obra)$/ },
+    { k:'inv',      o:8,  et:'Inversión',        re:/^(inversion|expectativa de inversion|expectativa)$/ },
+    { k:'telefono', o:9,  et:'Teléfono',         re:/^(telefono|celular|whatsapp|numero|numero de contacto|numero de celular)$/ },
+    { k:'llamada',  o:10, et:'Visita o llamada', re:/^(contacto del asesor|visita o llamada|visita|llamada|dia y hora|fecha y hora|horario|franja|agenda)$/ },
+    { k:'calif',    o:11, et:'Calificación',     re:/^(calificacion|temperatura|prioridad|clasificacion|lead)$/ }
+  ];
+  var RE_LINEA = /^\s*(?:[-•*]\s*)?\**\s*([^:\n*]{2,32}?)\s*\**\s*:\s*\**\s*(.+?)\s*$/;
+  var IGNORAR = /^(http|https|nota|importante|ojo|aviso|recuerda|ps|ejemplo|precio|costo|inicio|fin|horario de clases)$/;
+  var RE_RESUMEN = /calificaci[oó]n\s*:\s*[^;\n\]]+;[^\n]*:/i;
+  var RE_CALIF_LINEA = /^\s*(?:[-•*]\s*)?\**\s*calificaci[oó]n\s*\**\s*:/i;
+  function limpiaValor(v){
+    var t = String(v||'').replace(/\*+/g,'').replace(/^[\s"'“”]+|[\s"'“”]+$/g,'').trim();
+    if(/\.$/.test(t) && !/\b[ap]\. ?m\.$/i.test(t)) t = t.replace(/\.+$/,'');
+    return t.trim();
+  }
+  function capitaliza(t){ t = String(t||'').trim(); return t.charAt(0).toUpperCase() + t.slice(1); }
+  /* pares «Etiqueta: valor» del resumen canonico (una sola linea separada por «;») */
+  function paresResumen(texto){
+    var out = [];
+    String(texto||'').split('\n').forEach(function(l){
+      if(!RE_RESUMEN.test(l)) return;
+      var i = l.search(/calificaci[oó]n\s*:/i);
+      var s = l.slice(i).replace(/\].*$/,'').replace(/\s*\|.*$/,'');
+      s.split(';').forEach(function(p){
+        var j = p.indexOf(':'); if(j < 1) return;
+        var lab = p.slice(0,j).trim(), v = limpiaValor(p.slice(j+1));
+        if(lab && v) out.push({ lab:lab, v:v });
+      });
+    });
+    return out;
+  }
+  /* -> { lista:[{k,et,v,o}], calif:'texto crudo' } */
+  function leeCampos(texto){
+    var items = [];
+    String(texto||'').split('\n').forEach(function(l, i){
+      if(RE_RESUMEN.test(l)) return;
+      var m = RE_LINEA.exec(l);
+      if(!m) return;
+      var lab = m[1].trim(), v = limpiaValor(m[2]);
+      if(!v || v.length > 140) return;
+      items.push({ i:i, lab:lab, v:v, n:norm(lab).replace(/[^a-z ]/g,'').trim() });
+    });
+    paresResumen(texto).forEach(function(p, j){
+      items.push({ i:-100-j, lab:p.lab, v:p.v, n:norm(p.lab).replace(/[^a-z ]/g,'').trim(), forzar:true });
+    });
+    var lista = [], calif = '';
+    items.forEach(function(it, j){
+      if(IGNORAR.test(it.n)) return;
+      var canon = null;
+      for(var c=0;c<CAMPOS.length;c++){ if(CAMPOS[c].re.test(it.n)){ canon = CAMPOS[c]; break; } }
+      var enRacha = (items[j-1] && items[j-1].i === it.i-1) || (items[j+1] && items[j+1].i === it.i+1);
+      if(canon && canon.k === 'calif'){ if(!calif) calif = it.v; return; }
+      if(it.forzar && !canon) return;
+      if(!canon && !enRacha) return;
+      var key = canon ? canon.k : ('x_' + it.n);
+      if(lista.some(function(o){ return o.k === key; })) return;
+      lista.push({ k:key, et: canon ? canon.et : capitaliza(it.lab), v:it.v, o: canon ? canon.o : 9 });
+    });
+    lista = lista.map(function(x, idx){ x.idx = idx; return x; })
+                 .sort(function(a,b){ return (a.o - b.o) || (a.idx - b.idx); })
+                 .slice(0, 10);
+    return { lista:lista, calif:calif };
+  }
+  function leeCalif(texto, calCrudo){
+    var re = /\b(caliente|tibi[oa]|fri[oa])\b/;
+    var m = re.exec(norm(calCrudo));
+    if(!m){
+      var t = norm(texto);
+      var m2 = /(?:calific\w*|temperatura|prioridad|clasific\w*|lead|prospecto|interes)[^.\n]{0,40}?\b(caliente|tibi[oa]|fri[oa])\b/.exec(t) || /\[(caliente|tibi[oa]|fri[oa])\]/.exec(t);
+      m = m2 ? [m2[1], m2[1]] : null;
+    }
+    if(!m) return '';
+    var w = m[1] || m[0];
+    return /^caliente/.test(w) ? 'caliente' : (/^tibi/.test(w) ? 'tibia' : 'fria');
+  }
+  /* El agente avisa al equipo cuando CIERRA el caso (marcador interno o «dejé tu caso al asesor»).
+     Una oferta ("¿te parece una llamada?") NO cuenta: se descartan las frases con signo de pregunta o condicionales. */
+  var RE_COMPROMISO = /(te llamar(a|an|e|emos|ia|ian)\b|te escribir(a|an|e|emos|ia|ian)\b|te va a escribir|te van a escribir|te escribiremos|te llamaremos|se comunicara contigo|te contactara|te confirma(ra)? (la|el) (visita|llamada)|deje tu caso|dejo tu caso|queda(ra)? (agendada|programada|registrada|confirmada)|quedo (agendada|programada|registrada|confirmada)|agende tu (visita|llamada)|registre tu (visita|llamada|caso)|avise a (un|el|tu) asesor|avise al equipo|alerta (a|para) (el|los|un) (equipo|asesor|vendedor))/;
+  var RE_CONDICIONAL = /^\s*(si |en caso|puedo|podria|podemos|podrian|quieres|deseas|te gustaria|prefieres|cuando quieras)/;
+  function detectaPase(texto){
+    var t = norm(texto);
+    if(/\[\s*(alerta|cierre|handoff|derivado|llamada|pase|contacto|asesor)/.test(t)) return true;
+    if(/(^|\n)\s*(?:[-•*]\s*)?\**\s*calificacion\s*\**\s*:/.test(t)) return true;
+    var frases = t.split(/(?<=[.!\n])/);
+    /* si el mensaje termina pidiendo otro dato, el caso todavia no se cierra */
+    var ult = (t.trim().split(/(?<=[.!?\n])/).filter(function(x){ return x.trim(); }).pop() || '');
+    if(/[?¿]/.test(ult) && /(nombre|numero|telefono|celular|dia|hora|distrito|ciudad|medidas|vano|fotos|casa|negocio|obra|puerta|showroom)/.test(ult)) return false;
+    for(var i=0;i<frases.length;i++){
+      var f = frases[i];
+      if(!f || /[?¿]/.test(f)) continue;
+      if(RE_CONDICIONAL.test(f)) continue;
+      if(RE_COMPROMISO.test(f)) return true;
+    }
+    return false;
+  }
+  var RE_MARCA = /\[\s*(?:alerta|cierre|handoff|derivado|llamada|pase|contacto|asesor)[^\]]*\]/ig;
+  /* El texto que ve la persona: sin marcador interno y SIN calificacion (jamas se le dice «eres lead frio») */
+  function quitaMarcas(texto){
+    var s = String(texto||'').replace(RE_MARCA,'');
+    s = s.split('\n').filter(function(l){ return !RE_CALIF_LINEA.test(l) && !RE_RESUMEN.test(l); }).join('\n');
+    return s.replace(/\n{3,}/g,'\n\n').trim();
+  }
+
+  function tarjetaPase(){
+    for(var i=st.msgs.length-1;i>=0;i--) if(st.msgs[i].dir === 'pase') return st.msgs[i];
+    return null;
+  }
+  /* Une los campos nuevos a la tarjeta ya mostrada (no se duplica la tarjeta) */
+  function registraPase(replyTexto){
+    var r = leeCampos(replyTexto);
+    var cal = leeCalif(replyTexto, r.calif);
+    var t = tarjetaPase();
+    if(t){
+      var cambio = false;
+      if(!Array.isArray(t.campos)) t.campos = [];
+      r.lista.forEach(function(x){
+        var ya = t.campos.filter(function(y){ return y.k === x.k; })[0];
+        if(!ya){ t.campos.push(x); cambio = true; }
+        else if(ya.v !== x.v){ ya.v = x.v; cambio = true; }
+      });
+      if(cambio) t.campos.sort(function(a,b){ return (a.o - b.o); });
+      if(cal && t.cal !== cal){ t.cal = cal; cambio = true; }
+      return cambio;
+    }
+    st.msgs.push({ id:'pase-'+Date.now(), dir:'pase', campos:r.lista, cal:cal, ts:new Date().toISOString() });
+    return true;
+  }
+
+  /* ---------------- render del hilo ---------------- */
+  var TICKS_LEIDO = '<svg class="ticks" width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-label="Leído"><path d="M1 5.9l2.5 2.6L8.7 3"/><path d="M6.3 8.5L11.5 3"/></svg>';
+  var TICKS_ENVIADO = '<svg class="ticks gris" width="12" height="11" viewBox="0 0 12 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-label="Enviado"><path d="M1 5.9l2.5 2.6L9.5 2.4"/></svg>';
+  var CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  var ETQ_CAL = { caliente:'Caliente', tibia:'Tibio', fria:'Frío' };
+
+  /* Safari/iOS no baja el hilo si el layout aun no se actualizo: rAF de red. */
+  function abajo(){
+    var h = $('hilo');
+    h.scrollTop = h.scrollHeight;
+    if(typeof requestAnimationFrame === 'function'){
+      requestAnimationFrame(function(){ h.scrollTop = h.scrollHeight; });
+    }
+  }
+
+  function htmlPase(m){
+    var filas = '';
+    (Array.isArray(m.campos) ? m.campos : []).forEach(function(c){
+      filas += '<dt>' + esc(c.et) + '</dt><dd>' + esc(c.v) + '</dd>';
+    });
+    var fria = m.cal === 'fria';
+    var cal = m.cal ? '<span class="cal ' + m.cal + '">' + ETQ_CAL[m.cal] + '</span>' : '<span class="cal nd">Sin calificar</span>';
+    var meta = (m.cal === 'caliente' || m.cal === 'tibia')
+      ? 'Propuesta: la señal «Lead calificado» se enviaría a Meta cuando se conecte la API de conversiones (hoy no está conectada). '
+      : '';
+    return '<div class="pase' + (m._v ? '' : ' nuevo') + (fria ? ' sinalerta' : '') + '" role="status">'
+      + '<div class="kick"><span class="pulso"></span>' + (fria ? 'Registro para el equipo de ventas' : 'Alerta para el equipo de ventas') + '</div>'
+      + '<div class="cab"><span class="ok">' + CHECK + '</span><h4>' + (fria ? 'Curioso: sin agenda' : 'Oportunidad lista: atiéndela ahora') + '</h4>' + cal + '</div>'
+      + (filas
+          ? '<p class="res">Lo que recibe el asesor</p><dl>' + filas + '</dl>'
+          : '<p class="vacio">El asesor recibe esta conversación completa para escribirle a la persona.</p>')
+      + (fria
+          ? '<p class="vacio">El equipo no tiene que dedicarle tiempo ahora: queda registrado y se le compartió el enlace a los modelos.</p>'
+          : (m.tomado
+              ? '<p class="tomado">Un asesor tomó el caso. El asistente quedó en pausa.</p>'
+              : '<div class="tomar"><button type="button" data-tomar="1">Atender ahora</button><span>Así lo vería el asesor: toma la oportunidad y el asistente se pausa.</span></div>'))
+      + '<a class="crm" href="panel.html">Ver cómo queda en el CRM &rarr;</a>'
+      + '<p class="nota">' + meta + 'Simulación: no se avisó a ningún asesor real ni se envió nada a Meta.</p>'
+      + '</div>';
+  }
+
+  function pinta(alTope){
+    var h = $('hilo');
+    var html = '<span class="demo-nota"><b>Demo:</b> ' + esc(NOTA_DEMO) + '</span>';
+    if(MOCK) html += '<span class="demo-nota mockn">Modo de prueba local: las respuestas son un guion, no del asistente real.</span>';
+    html += '<span class="dia">' + esc(diaLargo(new Date())) + '</span>';
+
+    st.msgs.forEach(function(m){
+      if(m.dir === 'sis'){
+        html += '<div class="sis' + (m.err ? ' err' : '') + '" role="' + (m.err ? 'alert' : 'status') + '">' + esc(m.texto)
+              + (m.reintentar ? '<button type="button" data-reintentar="' + esc(m.id) + '">Reintentar</button>' : '') + '</div>';
+        return;
+      }
+      if(m.dir === 'pase'){ html += htmlPase(m); m._v = true; return; }
+      var mio = m.dir === 'in';
+      var et = m.tsLabel || hora(m.ts);
+      var nv = m._v ? '' : ' nuevo'; m._v = true;
+      if(m.auto){
+        html += '<div class="msg del-neg meta' + nv + '">'
+              + '<span class="txt">' + fmt(m.texto) + '</span>'
+              + '<span class="tag-auto">Mensaje de bienvenida automático: lo envía el sistema, no el asistente.</span>'
+              + '<span class="pie">' + esc(et) + '</span></div>';
+        return;
+      }
+      html += '<div class="msg ' + (mio?'del-cliente':'del-neg') + nv + '">'
+            + '<span class="txt">' + fmt(m.texto) + '</span>'
+            + '<span class="pie">' + esc(et) + (mio?(m.leido?TICKS_LEIDO:TICKS_ENVIADO):'') + '</span>'
+            + '</div>';
+    });
+    if(st.esperando) html += '<div class="typing" aria-label="escribiendo"><i></i><i></i><i></i></div>';
+
+    h.innerHTML = html;
+    var txts = h.querySelectorAll('.msg .txt');
+    for(var i=0;i<txts.length;i++) enlaza(txts[i]);
+    if(alTope){
+      h.scrollTop = 0;
+      if(typeof requestAnimationFrame === 'function') requestAnimationFrame(function(){ h.scrollTop = 0; });
+    }else{
+      abajo();
+    }
+    pintaEstadoPase();
+    pintaTurnos();
+    pintaRapidos();
+    guarda();
+  }
+
+  function pintaEstadoPase(){
+    var e = $('estado-pase'), t = tarjetaPase();
+    if(t){
+      e.className = 'estado-pase hecho';
+      var fria = t.cal === 'fria';
+      e.innerHTML = '<b>' + (t.tomado ? 'Un asesor tomó el caso' : (fria ? 'Registrado, sin agenda' : 'Alerta enviada al equipo')) + '</b>'
+        + (t.cal ? 'Calificación: ' + esc(ETQ_CAL[t.cal]) + '. ' : '')
+        + (t.tomado ? 'El asistente está en pausa.' : (fria ? 'El equipo no tiene que atenderlo ahora.' : 'El asesor recibe la oportunidad y puede atenderla ahora.'));
+    }else{
+      e.className = 'estado-pase';
+      e.innerHTML = '<b>Alerta al equipo: pendiente</b>Todavía no hay ninguna oportunidad lista para el asesor.';
+    }
+  }
+  function nTurnos(){ return st.msgs.filter(function(m){ return m.dir === 'in'; }).length; }
+  function pintaTurnos(){
+    var n = nTurnos();
+    $('turnos').textContent = n + ' de ' + MAX_TURNOS;
+  }
+
+  /* ---------------- conversacion ---------------- */
+  function abreHilo(){
+    st.msgs = [{ id:'bienvenida-'+Date.now(), dir:'out', auto:true, texto:BIENVENIDA, ts:new Date().toISOString(), tsLabel:etiquetaHora(), _v:false }];
+    st.mock = { paso:'inicio', datos:{}, fallos:0 };
+    st.t0 = Date.now();
+    st.lleno = false;
+    pinta(true);
+  }
+
+  function precarga(){
+    var t = $('in-msg');
+    t.value = '';
+    ajusta();
+  }
+
+  function nuevaConversacion(foco){
+    st.sesion = nuevaSesion();
+    st.enVuelo = false; st.esperando = false;
+    $('btn-enviar').disabled = false;
+    $('hd-estado').textContent = 'asistente virtual (IA)';
+    abreHilo();
+    pintaSelector();
+    pintaRapidos();
+    $('in-sesion').value = st.sesion;
+    precarga();
+    if(foco) $('in-msg').focus();
+  }
+
+  function ultimoDelCliente(){
+    for(var i = st.msgs.length - 1; i >= 0; i--) if(st.msgs[i].dir === 'in') return st.msgs[i];
+    return null;
+  }
+
+  /* ---------------- guion local (?mock=1) ----------------
+     Solo para ensayar el diseno y el flujo SIN gastar IA. Reglas del brief que cumple:
+     un dato por mensaje, sin precios ni plazos inventados, sin especificaciones tecnicas,
+     sin pedir DNI/correo/cuentas, sin decirle la calificacion a la persona. La unica
+     cifra es la de la propia clienta: «varios miles de soles» (decision 4 del brief,
+     PROPUESTA hasta que el catalogo verificado respalde un rango). */
+  var PASOS = ['linea','uso','ubic','vano','fotos','obra','inv','nombre','tel','franja'];
+  var RE_PROV = /\b(arequipa|cusco|cuzco|trujillo|piura|chiclayo|huancayo|ica|tacna|iquitos|cajamarca|puno|ayacucho|pucallpa|chimbote|tarapoto|huaraz|provincia)\b/;
+  var RE_BARATO = /(economic|barat|menos de|lo mas bajo|poca plata|presupuesto bajo|rebaja)/;
+  function falta(d, p){
+    switch(p){
+      case 'linea': return !d.linea;
+      case 'uso': return !d.uso;
+      case 'ubic': return !d.ubic;
+      case 'vano': return !d.vano;
+      case 'fotos': return !d.fotos;
+      case 'obra': return !d.obra;
+      case 'inv': return !d.inv;
+      case 'nombre': return !d.nombre;
+      case 'tel': return !d.tel;
+      case 'franja': return !d.franja;
+    }
+    return false;
+  }
+  function sigPaso(d){
+    for(var i=0;i<PASOS.length;i++) if(falta(d, PASOS[i])) return PASOS[i];
+    return 'fin';
+  }
+  function pregunta(p, d, m){
+    switch(p){
+      case 'linea': return m.variante === 'compara'
+        ? '¿Qué puerta estás comparando: de seguridad, cortafuego, de bóveda o antibalas, u otra?'
+        : '¿Qué tipo de puerta buscas: de seguridad, cortafuego, de bóveda o antibalas, o seccional?';
+      case 'uso': return m.variante === 'edificio'
+        ? '¿El edificio ya está construido o es un proyecto en obra?'
+        : '¿Para qué espacio sería: casa, negocio u obra?';
+      case 'ubic': return '¿En qué distrito o ciudad sería la instalación?';
+      case 'vano': return d.medido
+        ? 'Me dijiste que ya mediste el vano. ¿Cuánto mide, ancho por alto?'
+        : '¿Ya tienes medido el vano, ancho por alto? Si no, el asesor puede coordinar la medición.';
+      case 'fotos': return '¿Tienes fotos del vano, por dentro y por fuera?';
+      case 'obra': return '¿Sería una puerta nueva o un reemplazo de la que ya tienes? Si hay que ampliar o reducir el vano, lo evalúa el asesor.';
+      case 'inv': return 'Antes de seguir, una aclaración: son puertas de acero fabricadas e instaladas a medida, una inversión de varios miles de soles. ¿Va por ahí lo que tenías en mente?';
+      case 'nombre': return '¿Cuál es tu nombre completo?';
+      case 'tel': return '¿A qué celular te contacta el asesor? Si es el mismo de este WhatsApp, dímelo.';
+      case 'franja': return d.prov
+        ? '¿Qué día y a qué hora te viene bien una llamada o un WhatsApp del asesor?'
+        : '¿Qué día y a qué hora te viene bien: una visita al showroom de Lima o una llamada del asesor?';
+    }
+    return '';
+  }
+  function parseLinea(t){
+    if(/cortafuego|fuego/.test(t)) return 'Cortafuego';
+    if(/boveda|antibala/.test(t)) return 'Bóveda / Antibalas';
+    if(/seccional|garaje|cochera/.test(t)) return 'Seccional';
+    if(/seguridad|blindad|blindaje/.test(t)) return 'Seguridad';
+    return '';
+  }
+  function parseUso(t){
+    if(/obra|proyecto|constructora|edificio en|inmobiliaria/.test(t)) return 'Obra / B2B';
+    if(/casa|vivienda|departamento|hogar|condominio/.test(t)) return 'Vivienda';
+    if(/negocio|tienda|local|oficina|empresa|restaurante|bodega|clinica|colegio/.test(t)) return 'Negocio';
+    return '';
+  }
+  function limpiaDato(texto, re){ return String(texto||'').replace(re,'').trim().replace(/[.!]+$/,''); }
+  /* preguntas que el cliente mete a mitad de camino: se responden corto y se retoma la pregunta pendiente */
+  function intercepta(t){
+    if(/(@|\bdni\b|\bcci\b|cuenta bancaria|numero de cuenta|contrasena|\b\d{8}\b)/.test(t))
+      return 'Por favor no compartas DNI, correo ni datos de cuentas por aquí: eso lo coordina el asesor por un canal propio.';
+    if(/(cuanto cuesta|cuanto sale|\bprecios?\b|cuanto vale|\bcostos?\b)/.test(t))
+      return 'No hay un precio único: son puertas de acero a medida y el monto lo define el asesor según medidas, nivel de seguridad y acabado.';
+    if(/(\bplazos?\b|cuanto demora|cuanto tarda|cuando entregan|cuando instalan|\bgarantia\b)/.test(t))
+      return 'Plazos y garantía dependen del modelo y de si es a medida; te los confirma el asesor, yo no te prometo fechas.';
+    return '';
+  }
+  function mockCierre(d, m, fria){
+    var nombre = d.nombre ? d.nombre.split(' ')[0] : '';
+    var cal = fria ? 'Frío' : ((d.vano && d.vano !== 'sin medidas') || d.fotos === 'sí' || d.aceptaMedir ? 'Caliente' : 'Tibio');
+    var inv = fria ? 'por debajo' : (d.inv ? 'en línea' : 'sin dato');
+    var resumen = '[CIERRE: Calificación: ' + cal
+      + '; Línea: ' + (d.linea || 'Sin definir')
+      + '; Uso: ' + (d.uso || 'Sin dato')
+      + '; Ubicación: ' + (d.ubic || 'Sin dato')
+      + '; Medidas: ' + (d.vano || 'sin dato')
+      + '; Fotos: ' + (d.fotos || 'sin dato')
+      + '; Obra: ' + (d.obra || 'sin dato')
+      + '; Inversión: ' + inv + ']';
+    if(fria){
+      return 'Gracias por contármelo' + (nombre ? ', ' + nombre : '') + '. Nuestras puertas son de acero a medida y la inversión es de varios miles de soles, así que quizá no sea lo que buscas por ahora, y está bien.\n\nPuedes ver los modelos en puertasyblindajes.com y escribirnos cuando quieras.\n' + resumen;
+    }
+    return 'Confirmo tus datos:'
+      + '\n- Nombre: ' + d.nombre
+      + '\n- Qué buscas: ' + (d.linea || 'Sin definir')
+      + '\n- Uso: ' + (d.uso || 'Sin dato')
+      + '\n- Ubicación: ' + (d.ubic || 'Sin dato')
+      + '\n- Medidas del vano: ' + (d.vano === 'sin medidas' && d.aceptaMedir ? 'Sin medidas (acepta que el asesor mida)' : capitaliza(d.vano || 'sin dato'))
+      + '\n- Fotos: ' + (d.fotos === 'sí' ? 'Sí' : (d.fotos === 'no' ? 'No' : 'Sin dato'))
+      + '\n- Teléfono: ' + d.tel
+      + '\n- Visita o llamada: ' + capitaliza(d.franja)
+      + '\n\nListo, ' + nombre + '. Dejé tu caso al asesor: te confirma la visita o la llamada en esa franja. La inversión y los plazos los define él con tus medidas y la ficha técnica; nada es firme hasta entonces.\n' + resumen;
+  }
+  function mockRespuesta(texto){
+    var m = st.mock, d = m.datos, p = m.paso, t = norm(texto), r = '';
+
+    /* ---- primer mensaje: cada caso entra por su puerta ---- */
+    if(p === 'inicio'){
+      var l0 = parseLinea(t), u0 = parseUso(t);
+      if(st.esc === 'seg'){
+        d.linea = 'Seguridad'; d.uso = 'Vivienda';
+        r = 'Perfecto, una puerta de seguridad para tu casa.';
+      }else if(st.esc === 'corta'){
+        d.linea = 'Cortafuego'; m.variante = 'edificio';
+        r = 'Entendido: puertas cortafuego para un edificio. Los requisitos técnicos los confirma el asesor.';
+      }else if(st.esc === 'precio'){
+        d.linea = 'Seguridad';
+        r = 'No hay un precio único: son puertas de acero fabricadas e instaladas a medida, y el monto depende de las medidas, el nivel de seguridad y el acabado. Sí te adelanto que es una inversión de varios miles de soles.';
+      }else if(st.esc === 'vano'){
+        d.medido = true; d.fotos = 'sí';
+        r = 'Genial, eso adelanta mucho el trabajo.';
+      }else if(st.esc === 'obj'){
+        m.variante = 'compara';
+        r = 'Buena pregunta, y no te voy a inventar cifras: las diferencias reales (espesor del acero, anclaje, cerradura, acabado, instalación) se explican modelo por modelo con su ficha técnica, y eso te lo confirma el asesor.';
+      }else{
+        if(l0) d.linea = l0;
+        if(u0) d.uso = u0;
+        r = (l0 || u0) ? 'Perfecto.' : 'Con gusto.';
+      }
+      m.paso = (st.esc === 'libre' && !d.linea && !d.uso) ? 'uso' : sigPaso(d);
+      return r + '\n\n' + pregunta(m.paso, d, m);
+    }
+
+    if(p === 'fin'){
+      return d.frio
+        ? 'Cuando quieras, aquí estoy. Sin apuro.'
+        : 'Tu caso ya está con el asesor: él confirma la visita o la llamada, la inversión y los plazos. Si tienes otra duda mientras tanto, dime.';
+    }
+
+    /* ---- datos sensibles: se frena y se retoma la pregunta ---- */
+    var inter = intercepta(t);
+    var esPriv = /(@|\bdni\b|\bcci\b|cuenta bancaria|numero de cuenta|contrasena|\b\d{8}\b)/.test(t);
+    if(esPriv) return inter + '\n\n' + pregunta(p, d, m);
+
+    /* ---- el curioso que busca lo mas barato (o solo mira): Frio, sin agenda ---- */
+    if(RE_BARATO.test(t) || (p === 'inv' && /^\s*(no|nop|no creo)\b/.test(t) && !/\bsi\b/.test(t))){
+      d.inv = 'por debajo'; d.frio = true; m.paso = 'fin';
+      return mockCierre(d, m, true);
+    }
+    if(/(solo queria saber|lo pienso|despues te escribo|mas adelante te escribo)/.test(t)){
+      d.frio = true; m.paso = 'fin';
+      return 'Claro, sin presión. Si quieres ver los modelos, están en puertasyblindajes.com; y cuando tengas más claro qué puerta necesitas, aquí estoy.\n' + '[CIERRE: Calificación: Frío; Línea: ' + (d.linea || 'Sin definir') + '; Uso: ' + (d.uso || 'Sin dato') + '; Ubicación: ' + (d.ubic || 'Sin dato') + '; Medidas: ' + (d.vano || 'sin dato') + '; Fotos: ' + (d.fotos || 'sin dato') + '; Obra: ' + (d.obra || 'sin dato') + '; Inversión: sin dato]';
+    }
+
+    /* ---- precio o plazos a mitad de camino: se responde corto y se retoma ---- */
+    if(inter && !(p === 'tel' && /\d{9}/.test(t.replace(/\s/g,''))) && p !== 'vano'){
+      return inter + '\n\n' + pregunta(p, d, m);
+    }
+
+    /* ---- respuesta al paso pendiente ---- */
+    var prefijo = 'Anotado.';
+    if(p === 'linea'){
+      d.linea = parseLinea(t) || 'Sin definir';
+      var u1 = parseUso(t); if(u1 && !d.uso) d.uso = u1;
+    }else if(p === 'uso'){
+      d.uso = parseUso(t) || (m.variante === 'edificio' ? 'Vivienda' : 'Negocio');
+      prefijo = 'Entendido.';
+    }else if(p === 'ubic'){
+      d.ubic = capitaliza(limpiaDato(texto, /^(en|es en|queda en|estoy en|vivo en)\s+/i));
+      d.prov = RE_PROV.test(t);
+      prefijo = d.prov ? 'Gracias. En provincias, la cobertura de instalación la confirma el asesor.' : 'Gracias.';
+    }else if(p === 'vano'){
+      var dim = /(\d[\d.,]*)\s*(?:x|por|\*)\s*(\d[\d.,]*)/.exec(t);
+      if(dim){ d.vano = dim[1] + ' x ' + dim[2]; prefijo = 'Perfecto, esa medida le sirve al asesor.'; }
+      else if(/(medir|medicion|que vayan|visita|pueden ir)/.test(t)){ d.vano = 'sin medidas'; d.aceptaMedir = true; prefijo = 'Sin problema, el asesor puede coordinar la medición.'; }
+      else{ d.vano = 'sin medidas'; prefijo = 'Ningún problema.'; }
+    }else if(p === 'fotos'){
+      d.fotos = /\b(no|aun|todavia|ahorita no)\b/.test(t) ? 'no' : 'sí';
+      prefijo = d.fotos === 'sí' ? 'Bien. Las recibe el asesor por su canal propio; no hace falta pegarlas aquí.' : 'Ningún problema.';
+    }else if(p === 'obra'){
+      d.obra = /(ampli|reduc|alba[nñ]il|abrir|agrandar)/.test(t) ? 'sí' : (/(reemplaz|cambiar|misma medida|igual|la que tengo)/.test(t) ? 'no' : 'sin dato');
+    }else if(p === 'inv'){
+      d.inv = 'en línea';
+      prefijo = 'Gracias por la claridad.';
+    }else if(p === 'nombre'){
+      d.nombre = capitaliza(limpiaDato(texto, /^(mi nombre es|me llamo|soy)\s+/i));
+      prefijo = 'Mucho gusto, ' + d.nombre.split(' ')[0] + '.';
+    }else if(p === 'tel'){
+      d.tel = /mismo|este|whatsapp/.test(t) ? 'El mismo de este WhatsApp' : (texto.replace(/[^\d ]/g,'').trim() || texto.trim());
+    }else if(p === 'franja'){
+      d.franja = texto.trim();
+      m.paso = 'fin';
+      return mockCierre(d, m, false);
+    }
+    m.paso = sigPaso(d);
+    if(m.paso === 'fin') return mockCierre(d, m, false);
+    return prefijo + '\n\n' + pregunta(m.paso, d, m);
+  }
+
+  /* `reenvio`: reintento tras un error; no vuelve a pintar la burbuja del contacto. */
+  function enviar(texto, reenvio){
+    texto = String(texto||'').trim();
+    if(!texto || st.enVuelo) return;
+
+    var sesion = st.sesion;
+    var mio;
+    var tp = tarjetaPase();
+    if(tp && tp.tomado && !reenvio){
+      /* un asesor ya tomo el caso: el asistente esta en pausa, no se llama al chat */
+      st.msgs.push({ id:'local-'+Date.now(), dir:'in', texto:texto, ts:new Date().toISOString(), tsLabel:etiquetaHora(), leido:true });
+      st.msgs.push({ id:'s-'+Date.now(), dir:'sis', texto:'Un asesor tomó el caso, así que el asistente está en pausa. En esta simulación no responde nadie más: usa Reiniciar chat para volver a empezar.' });
+      pinta();
+      return;
+    }
+    if(!reenvio && nTurnos() >= MAX_TURNOS){
+      st.lleno = true;
+      var ult = st.msgs[st.msgs.length - 1];
+      if(!(ult && ult.dir === 'sis' && ult.limite)) st.msgs.push({ id:'s-'+Date.now(), dir:'sis', limite:true, texto:'Llegaste al máximo de mensajes de esta conversación de prueba. Usa Reiniciar chat para empezar otra.' });
+      pinta();
+      return;
+    }
+    if(reenvio){ mio = ultimoDelCliente(); }
+    else{
+      mio = { id:'local-'+Date.now(), dir:'in', texto:texto, ts:new Date().toISOString(), tsLabel:etiquetaHora(), leido:false };
+      st.msgs.push(mio);
+    }
+
+    st.enVuelo = true; st.esperando = true;
+    $('btn-enviar').disabled = true;
+    $('hd-estado').textContent = 'escribiendo…';
+    pinta();
+
+    var llamada;
+    if(MOCK){
+      var textoMock = mockRespuesta(texto);
+      llamada = new Promise(function(res){ setTimeout(function(){ res({ output:textoMock }); }, 700 + Math.random()*500); });
+    }else{
+      llamada = postConReintento(EP_CHAT, { message: texto, sessionId: sesion, channel: 'web', origin: location.origin });
+    }
+
+    llamada
+      .then(function(r){ return { r:r }; }, function(e){ return { e:e }; })
+      .then(function(a){
+        if(st.sesion !== sesion) return;
+        if(mio) mio.leido = true;
+        if(a.e){
+          st.msgs.push({ id:'s-'+Date.now(), dir:'sis', err:true, reintentar:true, texto: mensajeError(a.e), reintento:texto });
+          return;
+        }
+        var reply = a.r && (a.r.output || a.r.response || a.r.text);
+        if(reply && String(reply).trim()){
+          reply = String(reply);
+          var visible = quitaMarcas(reply);
+          st.msgs.push({ id:'r-'+Date.now(), dir:'out', texto:visible || reply, ts:new Date().toISOString(), tsLabel:etiquetaHora() });
+          if(detectaPase(reply)) registraPase(reply);
+        }else{
+          st.msgs.push({ id:'s-'+Date.now(), dir:'sis', err:true, reintentar:true, texto:'El asistente respondió vacío.', reintento:texto });
+        }
+      }).then(function(){
+        if(st.sesion !== sesion) return;
+        st.enVuelo = false; st.esperando = false;
+        $('btn-enviar').disabled = false;
+        $('hd-estado').textContent = 'asistente virtual (IA)';
+        pinta();
+      });
+  }
+
+  function mensajeError(e){
+    if(e && e.status === 404) return 'El asistente todavía no está conectado en este servidor. Reintenta en unos minutos.';
+    if(e && e.status === 413) return 'Tu mensaje es muy largo. Envíalo en partes más cortas.';
+    if(e && e.status === 429) return 'Demasiados mensajes seguidos. Espera un momento y reintenta.';
+    if(e && e.name === 'AbortError') return 'El asistente tardó más de lo normal en responder.';
+    if(e && e.status) return 'El asistente no pudo responder (error ' + e.status + ').';
+    return 'No hay conexión con el asistente.';
+  }
+
+  /* ---------------- interfaz ---------------- */
+  function ajusta(){
+    var t = $('in-msg'); t.style.height = 'auto';
+    t.style.height = Math.min(t.scrollHeight, 100) + 'px';
+    t.style.overflowY = t.scrollHeight > 100 ? 'auto' : 'hidden';
+  }
+  function pintaSelector(){
+    var btns = document.querySelectorAll('.chip[data-esc]');
+    for(var i=0;i<btns.length;i++) btns[i].setAttribute('aria-pressed', btns[i].getAttribute('data-esc') === st.esc ? 'true' : 'false');
+    $('sel-info').textContent = ESCENARIOS[st.esc].info;
+    $('st-hora').textContent = etiquetaHora();
+  }
+  /* Los mensajes rapidos ya enviados desaparecen: el primero que queda es el siguiente de la charla.
+     Solo se reconstruyen si cambia la lista (asi la tira del movil no salta mientras la deslizas). */
+  function pintaRapidos(){
+    var usados = {};
+    st.msgs.forEach(function(m){ if(m.dir === 'in') usados[m.texto] = true; });
+    var lista = ESCENARIOS[st.esc].rapidos.filter(function(txt){ return !usados[txt]; });
+    var clave = st.esc + '|' + lista.join('|');
+    ['rapidos-d','rapidos-m'].forEach(function(cont){
+      var caja = $(cont); if(!caja) return;
+      if(caja.getAttribute('data-k') === clave) return;
+      caja.setAttribute('data-k', clave);
+      caja.innerHTML = '';
+      lista.forEach(function(txt){
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'rapido'; b.textContent = txt;
+        b.addEventListener('click', function(){ $('in-msg').value = txt; $('in-msg').focus(); ajusta(); });
+        caja.appendChild(b);
+      });
+      caja.hidden = !lista.length && cont === 'rapidos-m';
+    });
+  }
+  /* El boton de escenario empieza una conversacion nueva y envia el primer mensaje literal.
+     Antirrebote: un doble toque no gasta dos turnos reales. */
+  var ultimoChip = 0;
+  function iniciaEscenario(e){
+    var ahora = Date.now();
+    if(ahora - ultimoChip < 1500) return;
+    ultimoChip = ahora;
+    st.esc = e;
+    nuevaConversacion(false);
+    enviar(ESCENARIOS[e].primero);
+  }
+
+  function init(){
+    if(!st.msgs.length) abreHilo(); else pinta(false);
+    $('in-sesion').value = st.sesion;
+    pintaSelector();
+    pintaRapidos();
+
+    var chips = document.querySelectorAll('.chip[data-esc]');
+    for(var i=0;i<chips.length;i++){
+      (function(b){ b.addEventListener('click', function(){ iniciaEscenario(b.getAttribute('data-esc')); }); })(chips[i]);
+    }
+
+    $('hilo').addEventListener('click', function(ev){
+      var tm = ev.target.closest && ev.target.closest('button[data-tomar]');
+      if(tm){
+        var t = tarjetaPase();
+        if(t && !t.tomado){ t.tomado = true; pinta(); }
+        return;
+      }
+      var r = ev.target.closest && ev.target.closest('button[data-reintentar]');
+      if(r && !st.enVuelo){
+        var id = r.getAttribute('data-reintentar'), texto = '';
+        st.msgs = st.msgs.filter(function(m){ if(m.id === id){ texto = m.reintento || ''; return false; } return true; });
+        enviar(texto, true);
+      }
+    });
+
+    $('form').addEventListener('submit', function(ev){
+      ev.preventDefault();
+      var t = $('in-msg').value;
+      $('in-msg').value = ''; ajusta();
+      enviar(t);
+    });
+    $('in-msg').addEventListener('input', ajusta);
+    $('in-msg').addEventListener('keydown', function(ev){
+      if(ev.key === 'Enter' && !ev.shiftKey){ ev.preventDefault(); $('form').requestSubmit(); }
+    });
+    $('in-msg').addEventListener('focus', function(){ setTimeout(abajo, 250); });
+    $('btn-reiniciar').addEventListener('click', function(){ nuevaConversacion(true); });
+    $('btn-reiniciar-top').addEventListener('click', function(){ nuevaConversacion(true); });
+
+    var av = $('hd-av');
+    av.addEventListener('error', function(){ av.style.visibility = 'hidden'; });
+    if(av.complete && av.naturalWidth === 0) av.style.visibility = 'hidden';
+
+    /* teclado en movil: el alto visible real manda (iOS no encoge 100dvh al abrir el teclado) */
+    if(window.visualViewport){
+      var vv = window.visualViewport;
+      var ajustaVV = function(){
+        if(window.innerWidth < 900){
+          document.body.style.height = Math.round(vv.height) + 'px';
+          window.scrollTo(0, 0);
+          abajo();
+        }else{
+          document.body.style.height = '';
+        }
+      };
+      vv.addEventListener('resize', ajustaVV);
+    }
+
+    /* el reloj de la barra de estado solo existe en escritorio */
+    var reloj = function(){ $('st-hora').textContent = etiquetaHora(); };
+    reloj();
+    var timer = setInterval(reloj, 20000);
+    window.addEventListener('pagehide', function(){ clearInterval(timer); });
+  }
+
+  /* solo en local: permite probar el lector de la alerta sin gastar turnos del chat */
+  if(esLocal) window.__pybParse = { leeCampos:leeCampos, leeCalif:leeCalif, detectaPase:detectaPase, quitaMarcas:quitaMarcas };
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>

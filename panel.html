@@ -1,0 +1,1149 @@
+<!doctype html>
+<!--
+  CRM de leads — Puertas y Blindajes (demo IJV Agency). Un solo archivo, HTML + JS vanilla.
+  Molde: clients/demo-adelantosvisa/site/panel.html (ADELA) y demo-ciremo. Marca medida de su web (BRIEF-ORQUESTADOR).
+
+  CONTRATO DEL ENDPOINT (GET https://meta.ijvagency.com/webhook/puertasyblindajes-demo-panel), sin auth:
+    { ok:true, generado:ISO, leads:[ {
+        lead_id,          // BORRADOR-<session_id> -> CIERRE-<epoch> al pasar a pending (no se usa como clave)
+        session_id,       // CLAVE de las ediciones locales (localStorage) y de la deduplicación
+        nombre, telefono, // telefono = solo dígitos o con +51
+        calificacion,     // opcional: Caliente|Tibio|Frío (si falta, se lee de «Calificación:» del resumen)
+        resumen,          // = columna context_summary, formato canónico:
+                          //   Calificación: Caliente|Tibio|Frío; Línea: …; Uso: …; Ubicación: …; Medidas: <ancho x alto|sin medidas>;
+                          //   Fotos: sí|no; Obra: sí|no|sin dato; Inversión: en línea|por debajo|sin dato; nota | <mensaje>
+        estado,           // draft|pending|verified|rejected  (también acepta borrador|alerta_enviada|confirmada|rechazada)
+        programado_para,  // opcional: día y hora acordados ('AAAA-MM-DD HH:MM' hora Lima, o texto libre)
+        creado            // ISO (created_at)
+    } ] }
+  El parser es TOLERANTE: lo que falte o venga raro sale como «—»; nunca rompe. Nunca se pide ni se muestra token, DNI, correo ni cuentas.
+
+  MAPEO estado de la tabla cierres_demo_puertasyblindajes -> etapa del CRM:
+    draft    (borrador)        -> Calificado   si la calificación es Caliente/Tibio (el asistente ya anotó línea, ubicación y expectativa)
+                                  Curioso/Descartado si es Frío (el filtro de expectativa decidió «sin agenda»: se agradece y se envía el catálogo)
+                                  Nuevo si todavía no hay calificación (escribió, aún no hay datos)
+    pending  (alerta_enviada)  -> Visita / llamada agendada · «por confirmar» (el lead dio día y hora; se avisó al asesor)
+    verified (confirmada)      -> Visita / llamada agendada · «confirmada por el asesor»
+                                  DECISIÓN: verified NO se mapea a «Adelanto recibido». El asistente nunca cobra ni pide cuentas: que el asesor
+                                  confirme el horario no es un adelanto, y mostrarlo como venta inflaría la cifra más delicada de la demo.
+    rejected (rechazada)       -> Curioso / Descartado
+  «Nuevo» (a mano), «Proforma enviada» y «Adelanto recibido (venta)» se alcanzan a mano (botones, menú o arrastrando): cotización,
+  pago, fabricación e instalación son posteriores y manuales. Los cambios locales se guardan por session_id en localStorage.
+  «Señal a Meta»: badges SIMULADOS (hoy no hay CAPI conectado; es la propuesta). ?mock=1 solo ejemplos · ?fake=1 leads falsos en vivo · ?incluir_pruebas=1.
+-->
+<html lang="es-PE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#1B110E">
+<title>CRM Puertas y Blindajes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Righteous&family=Saira+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Roboto (variable, latin) viene de ./assets; Righteous y Saira Condensed (500-700) de Google Fonts, con respaldo local */
+@font-face{font-family:'Roboto';font-style:normal;font-weight:100 900;font-display:swap;src:url(./assets/roboto-kfo7cnqeu92fr1me7ksn66agldtyluama3yuba.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+:root{
+  --r:14px;--r-s:10px;
+  --f-ui:'Roboto',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
+  --f-d:'Righteous','Arial Black',Impact,system-ui,sans-serif;
+  --f-l:'Saira Condensed','Arial Narrow','Roboto Condensed',Roboto,sans-serif;
+  --bg:#EAE5E0;--card:#fff;--ink:#1B110E;--mut:#5A4A44;--faint:#6B5B54;--line:#D6CCC4;--line2:#E7DFD8;
+  --g950:#120A08;--g900:#1B110E;--g800:#B60808;--g700:#8F0606;--g200:#D9CEC6;--g100:#E3DBD4;--g50:#F5F1ED;
+  --acc:#B60808;--accd:#8F0606;--acc100:#FBE3E3;
+  --amber:#E8A200;--amber100:#FFF1C9;--amber800:#6B4A00;
+  --red:#9A0707;--red100:#FBDCDC;--blue:#2F4A63;--blue100:#E1EAF2;--slate:#5A4A44;--slate100:#E8E3DE;
+  --sh:0 1px 2px rgba(27,17,14,.07),0 10px 28px -18px rgba(27,17,14,.4);
+  --sh-lg:0 24px 60px -20px rgba(27,17,14,.55);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-padding-top:70px}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body.lock{overflow:hidden}
+a{color:var(--acc);text-underline-offset:3px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+h1,h2,h3{font-family:var(--f-d);font-weight:400;margin:0;letter-spacing:.01em;color:var(--g900)}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px;border-radius:6px}
+.demo-strip :focus-visible,.dr-head :focus-visible,header.top :focus-visible{outline-color:#FF9A8B}
+.skip{position:absolute;left:-999px;top:8px;background:var(--g900);color:#fff;padding:8px 14px;border-radius:8px;z-index:200}
+.skip:focus{left:8px}
+.wrap{max-width:1400px;margin:0 auto;padding:0 20px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Franja DEMO */
+.demo-strip{background:#0D0706;color:#fff;font-size:.84rem}
+.demo-strip .wrap{display:flex;align-items:center;gap:12px;padding-top:8px;padding-bottom:8px;flex-wrap:wrap}
+.demo-strip p{margin:0;flex:1;min-width:240px;line-height:1.4;color:#E8DDD4}
+.demo-strip b{color:#FF9A8B}
+.tag-demo{background:var(--acc);color:#fff;font-family:var(--f-l);font-weight:700;font-size:.8rem;letter-spacing:.1em;padding:2px 10px;border-radius:999px}
+.link-btn{background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:999px;padding:5px 12px;font-size:.8rem;font-weight:500}
+.link-btn:hover{background:rgba(255,255,255,.12)}
+@media(min-width:900px){.demo-strip{position:sticky;top:0;z-index:60}}
+
+/* Barra superior */
+header.top{background:var(--g900);border-bottom:3px solid var(--acc);position:relative}
+header.top .wrap{display:flex;align-items:center;gap:14px;padding-top:12px;padding-bottom:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit}
+.brand img{height:30px;width:auto;display:block}
+.brand-app{font-family:var(--f-l);font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:1.05rem;color:#EAE5E0;border-left:2px solid rgba(255,255,255,.25);padding-left:14px;line-height:1.1}
+.brand-app small{display:block;font-family:var(--f-ui);text-transform:none;letter-spacing:0;font-weight:400;font-size:.72rem;color:#BDAEA5;margin-top:2px}
+.chip-demo{font-family:var(--f-l);font-size:.82rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#FFD9D2;background:rgba(182,8,8,.28);border:1px solid rgba(255,154,139,.5);border-radius:999px;padding:3px 12px}
+.top .sp{flex:1}
+.toplinks{display:flex;gap:6px;flex-wrap:wrap}
+.toplinks a{font-family:var(--f-l);font-size:.95rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;text-decoration:none;color:#EAE5E0;padding:7px 12px;border-radius:9px}
+.toplinks a:hover{background:rgba(255,255,255,.1)}
+
+/* Botones */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid transparent;border-radius:10px;padding:9px 16px;font-family:var(--f-l);font-weight:600;font-size:1rem;letter-spacing:.04em;text-transform:uppercase;line-height:1.2;text-decoration:none;white-space:nowrap;transition:background .15s,box-shadow .15s,transform .15s}
+.btn.primary{background:var(--g900);color:#fff}
+.btn.primary:hover{background:#33211C}
+header.top .btn.primary{background:var(--acc)}
+header.top .btn.primary:hover{background:#D01212}
+.btn.gold{background:var(--acc);color:#fff;box-shadow:0 1px 0 var(--accd)}
+.btn.gold:hover{background:#D01212}
+.btn.ghost{background:#fff;border-color:var(--line);color:var(--g900)}
+.btn.ghost:hover{background:var(--g50);border-color:var(--g200)}
+.btn.sm{padding:6px 12px;font-size:.9rem;border-radius:9px}
+.btn[disabled],.btn[aria-disabled=true]{opacity:.55;cursor:not-allowed}
+.btn svg{width:16px;height:16px;flex:none}
+
+main{padding:22px 0 20px}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.page-head h1{font-size:clamp(1.4rem,2.6vw,1.9rem);text-transform:uppercase}
+.page-head p{margin:2px 0 0;color:var(--mut);font-size:.95rem}
+.live-status{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;color:var(--faint);background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+.dot{width:8px;height:8px;border-radius:50%;background:#A89A92;flex:none}
+.dot.on{background:#1E9E5F;box-shadow:0 0 0 0 rgba(30,158,95,.5);animation:pulse 2s infinite}
+.dot.warn{background:var(--amber)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(30,158,95,.5)}70%{box-shadow:0 0 0 7px rgba(30,158,95,0)}100%{box-shadow:0 0 0 0 rgba(30,158,95,0)}}
+
+/* Banda «Tu mes hoy» */
+.band{background:linear-gradient(180deg,#fff,#F8F4F0);border:1px solid var(--line);border-top:4px solid var(--acc);border-radius:var(--r);box-shadow:var(--sh);padding:16px 18px;margin-bottom:22px;display:grid;grid-template-columns:1fr;gap:12px}
+.band h2{font-size:1.2rem;text-transform:uppercase}
+.band .sub{color:var(--mut);font-size:.88rem;margin:3px 0 0;max-width:880px}
+.band .nums{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.band .num{background:var(--g50);border:1px solid var(--line2);border-radius:12px;padding:10px 12px}
+.band .num b{display:block;font-family:var(--f-d);font-weight:400;font-size:1.45rem;line-height:1.1;color:var(--g900)}
+.band .num span{font-size:.76rem;color:var(--faint);line-height:1.3;display:block;margin-top:3px}
+.band .num.res{background:var(--acc100);border-color:#F0B8B8}
+.band .num.res b{color:var(--accd)}
+.band .formula{margin:0;font-size:.84rem;color:var(--mut);border-top:1px dashed var(--line);padding-top:9px;line-height:1.7}
+.band .formula code{font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--g100);border-radius:6px;padding:1px 6px;color:var(--g950);font-size:.8rem}
+.band .tagline{display:inline-block;font-family:var(--f-l);font-weight:700;font-size:.78rem;letter-spacing:.09em;text-transform:uppercase;background:var(--g100);color:var(--mut);border-radius:999px;padding:1px 9px;margin-right:6px}
+
+/* KPIs */
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:22px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);position:relative;overflow:hidden}
+.kpi .n{font-family:var(--f-d);font-size:clamp(1.7rem,2.6vw,2.2rem);line-height:1.05;color:var(--g900)}
+.kpi .l{font-family:var(--f-l);font-weight:600;font-size:1rem;letter-spacing:.03em;text-transform:uppercase;margin-top:6px;color:var(--ink);line-height:1.2}
+.kpi .s{font-size:.76rem;color:var(--faint);margin-top:2px;line-height:1.35}
+.kpi.hot{border-color:#E4A3A3;background:linear-gradient(180deg,#FFF6F5,#fff)}
+.kpi.hot::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--acc)}
+.kpi.win{border-color:#9AD0B5;background:linear-gradient(180deg,#F1FAF5,#fff)}
+.kpi.win::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#1E7A46}
+
+/* Secciones */
+.sec-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.sec-head h2{font-size:1.2rem;text-transform:uppercase}
+.sec-head .sub{color:var(--mut);font-size:.86rem}
+.sec-head .sp{flex:1}
+section.block{margin-bottom:26px}
+
+/* Atender ahora */
+.calls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.call{background:var(--card);border:1px solid #E4A3A3;border-radius:var(--r);padding:14px;box-shadow:var(--sh);display:flex;flex-direction:column;gap:8px;position:relative}
+.call::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:0 4px 4px 0;background:var(--acc)}
+.call.on-call{border-color:var(--g200);background:var(--g50)}
+.call.on-call::before{background:#1E9E5F}
+.call .top-row{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.call .who{background:none;border:0;padding:0;text-align:left;font-family:var(--f-d);font-size:1.05rem;color:var(--g950);line-height:1.25}
+.call .who:hover{text-decoration:underline;text-underline-offset:3px}
+.call .course{font-size:.86rem;color:var(--mut)}
+.call .why{font-size:.86rem;color:var(--ink);margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.call .meta{font-size:.78rem;color:var(--faint);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.call .meta .wait{color:var(--red);font-weight:700}
+.call .acts{display:flex;gap:8px;margin-top:auto;padding-top:4px;flex-wrap:wrap}
+.calls-more{margin-top:10px}
+.empty{background:var(--card);border:1px dashed #A89A92;border-radius:var(--r);padding:26px 18px;text-align:center;color:var(--mut)}
+.empty b{display:block;color:var(--ink);font-family:var(--f-d);font-weight:400;margin-bottom:4px}
+.empty .btn{margin-top:10px}
+
+/* Chips */
+.chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--f-l);font-size:.82rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 9px;border-radius:999px;white-space:nowrap;line-height:1.5}
+.cal-caliente{background:var(--red100);color:var(--red)}
+.cal-tibio{background:var(--amber100);color:var(--amber800)}
+.cal-frio{background:var(--blue100);color:var(--blue)}
+.cal-na{background:var(--slate100);color:var(--slate)}
+.chip.live{background:#E2F6EA;color:#0F6B3A}
+.chip.live .dot{width:7px;height:7px}
+.chip.ex{background:transparent;color:var(--faint);border:1px dashed #A89A92;font-weight:600}
+.chip.st{background:var(--g100);color:var(--g900)}
+.chip.camp-s{background:#EFE6DF;color:#5C3A2A}
+.chip.camp-c{background:#FCE7D6;color:#7A3A0B}
+.chip.por{background:var(--amber100);color:var(--amber800)}
+.chip.ok{background:#E2F6EA;color:#0F6B3A}
+
+/* Barra de trabajo */
+.tabs{display:inline-flex;background:var(--g100);border-radius:11px;padding:3px;gap:2px}
+.tabs button{border:0;background:transparent;padding:5px 14px;border-radius:9px;font-family:var(--f-l);font-weight:600;font-size:1rem;letter-spacing:.05em;text-transform:uppercase;color:var(--g900)}
+.tabs button[aria-pressed=true]{background:#fff;box-shadow:0 1px 3px rgba(27,17,14,.2);color:var(--acc)}
+.filters{display:grid;grid-template-columns:minmax(190px,1.5fr) repeat(5,minmax(0,1fr)) auto;gap:10px;margin-bottom:10px;align-items:end}
+.field label{display:block;font-family:var(--f-l);font-size:.82rem;font-weight:700;color:var(--mut);margin:0 0 3px 2px;letter-spacing:.07em;text-transform:uppercase}
+.field input,.field select{width:100%;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:.88rem;min-height:38px}
+.field select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%235A4A44' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;padding-right:28px}
+.segs{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.segs .lbl{font-family:var(--f-l);font-size:.85rem;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin-right:2px}
+.seg{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 12px;font-family:var(--f-l);font-size:.95rem;font-weight:600;letter-spacing:.03em;color:var(--g900);display:inline-flex;gap:7px;align-items:center}
+.seg .c{background:var(--g100);border-radius:999px;font-size:.8rem;padding:0 7px;color:var(--g900)}
+.seg[aria-pressed=true]{background:var(--g900);border-color:var(--g900);color:#fff}
+.seg[aria-pressed=true] .c{background:rgba(255,255,255,.2);color:#fff}
+.export-line{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:.82rem;color:var(--mut);flex-wrap:wrap}
+
+/* Tablero */
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(222px,1fr);gap:12px;overflow-x:auto;padding-bottom:10px;scroll-snap-type:x proximity}
+.col{background:var(--g100);border-radius:var(--r);padding:10px;display:flex;flex-direction:column;gap:8px;min-height:140px;border-top:4px solid var(--st,#A89A92);scroll-snap-align:start}
+.col.over{outline:3px dashed var(--acc);outline-offset:-3px;background:#EBD3CD}
+.col-h{display:flex;align-items:center;gap:8px;padding:2px 2px 4px}
+.col-h h3{font-family:var(--f-l);font-weight:700;font-size:1.02rem;letter-spacing:.04em;text-transform:uppercase;flex:1;line-height:1.15}
+.col-h .n{background:#fff;border-radius:999px;font-size:.78rem;font-weight:700;padding:0 8px;color:var(--g900)}
+.col-d{font-size:.72rem;color:var(--faint);margin:-4px 2px 2px;line-height:1.3}
+.col ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.col .none{font-size:.8rem;color:var(--faint);text-align:center;padding:16px 6px;border:1px dashed #A89A92;border-radius:10px;background:rgba(255,255,255,.5)}
+.lead{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(27,17,14,.08);transition:box-shadow .15s,border-color .15s}
+.lead:hover{box-shadow:var(--sh);border-color:var(--g200)}
+.lead.dragging{opacity:.45}
+.lead .main{display:block;width:100%;text-align:left;background:none;border:0;padding:10px 11px 6px;border-radius:12px 12px 0 0}
+.lead .l1{display:flex;gap:6px;justify-content:space-between;align-items:flex-start}
+.lead .nm{font-weight:700;font-size:.9rem;line-height:1.3;color:var(--g950)}
+.lead .cs{font-size:.78rem;color:var(--mut);margin-top:2px;line-height:1.3}
+.lead .mt{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:7px;font-size:.74rem;color:var(--faint)}
+.lead .ft{display:flex;gap:6px;align-items:center;padding:0 9px 9px 11px}
+.lead .ft .chip{flex:none}
+.lead .mv{appearance:none;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:.74rem;font-weight:600;color:var(--g900);padding:3px 6px;flex:1 1 0;min-width:0;text-overflow:ellipsis}
+.lead.is-live{border-color:#9AD8B4}
+
+/* Lista */
+.tbl-wrap{background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:auto;box-shadow:var(--sh)}
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+thead th{position:sticky;top:0;text-align:left;background:var(--g50);font-family:var(--f-l);font-size:.85rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);padding:0;border-bottom:1px solid var(--line);white-space:nowrap}
+thead th button{width:100%;text-align:left;background:none;border:0;padding:11px 12px;font:inherit;font-weight:700;text-transform:inherit;letter-spacing:inherit;color:inherit;display:flex;gap:5px;align-items:center}
+thead th button:hover{color:var(--g950)}
+thead th[aria-sort] button{color:var(--acc)}
+tbody tr{border-top:1px solid var(--line2);cursor:pointer}
+tbody tr:hover{background:var(--g50)}
+tbody td{padding:10px 12px;vertical-align:middle}
+td .tel{font-size:.78rem;color:var(--faint)}
+td .row-link{background:none;border:0;padding:0;text-align:left;font-weight:700;color:var(--g950)}
+td .row-link:hover{text-decoration:underline}
+
+/* Cajón */
+.scrim{position:fixed;inset:0;background:rgba(18,10,8,.55);opacity:0;visibility:hidden;transition:opacity .2s,visibility 0s .2s;z-index:90}
+.scrim.on{opacity:1;visibility:visible;transition:opacity .2s}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100vw);background:var(--bg);z-index:100;transform:translateX(104%);visibility:hidden;transition:transform .26s cubic-bezier(.2,.8,.2,1),visibility 0s .26s;display:flex;flex-direction:column;box-shadow:var(--sh-lg)}
+.drawer.open{transform:none;visibility:visible;transition:transform .26s cubic-bezier(.2,.8,.2,1)}
+.dr-head{background:var(--g900);color:#fff;padding:16px 18px;display:flex;gap:12px;align-items:flex-start;justify-content:space-between;border-bottom:3px solid var(--acc)}
+.dr-head h2{color:#fff;font-size:1.25rem;line-height:1.25}
+.dr-sub{margin:4px 0 0;font-size:.88rem;color:#D9CCC3;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.dr-sub .btn{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.3);color:#fff;padding:2px 10px;font-size:.85rem}
+.icon-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;width:38px;height:38px;display:grid;place-items:center;flex:none;font-size:1.3rem;line-height:1}
+.icon-btn:hover{background:rgba(255,255,255,.22)}
+.dr-body{overflow:auto;padding:16px 18px 28px;display:flex;flex-direction:column;gap:18px;flex:1}
+.dr-body h3{font-family:var(--f-l);font-size:.95rem;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);margin:0 0 7px;font-weight:700}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.dr-actions{display:flex;gap:8px;flex-wrap:wrap}
+.quote{background:#fff;border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:10px;padding:12px 14px;margin:0;font-size:.92rem;color:var(--ink)}
+.quote small{display:block;color:var(--faint);margin-top:6px;font-size:.74rem}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fact{background:#fff;border:1px solid var(--line2);border-radius:10px;padding:8px 11px}
+.fact dt{font-family:var(--f-l);font-size:.8rem;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:700}
+.fact dd{margin:1px 0 0;font-size:.88rem;font-weight:500}
+.fact.wide{grid-column:1/-1}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form .field.wide{grid-column:1/-1}
+textarea{width:100%;min-height:92px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;resize:vertical;font-size:.9rem}
+.hint{font-size:.76rem;color:var(--faint);margin:5px 0 0}
+.tl{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--g200);display:flex;flex-direction:column;gap:11px}
+.tl li{position:relative;font-size:.86rem}
+.tl li::before{content:"";position:absolute;left:-20px;top:5px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid var(--g900)}
+.tl li.loc::before{border-color:var(--acc);background:var(--acc)}
+.tl time{display:block;font-size:.72rem;color:var(--faint)}
+.meta-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-l);font-size:.85rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:999px;padding:1px 10px;border:1px dashed #A89A92;background:#fff;color:var(--faint)}
+.meta-badge.on{border-style:solid;border-color:#9AD0B5;background:#E4F5EC;color:#0F6B3A}
+.meta-list{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.safe{font-size:.76rem;color:var(--faint);background:var(--g50);border:1px solid var(--line2);border-radius:10px;padding:8px 10px;margin:0}
+
+/* Bloque EJEMPLO */
+.ejemplo{position:relative;border:2px dashed #9C8C83;border-radius:18px;padding:34px 14px 6px;margin-top:6px;background:rgba(255,255,255,.35)}
+.ejemplo .rib{position:absolute;top:-1px;left:16px;transform:translateY(-50%);background:var(--g900);color:#fff;font-family:var(--f-l);font-size:.9rem;font-weight:700;letter-spacing:.09em;padding:3px 13px;border-radius:999px;text-transform:uppercase;max-width:calc(100% - 32px)}
+.ejemplo .rib b{color:#FF9A8B}
+.ejemplo-note{margin:-2px 2px 12px;font-size:.84rem;color:var(--mut)}
+.ejemplo-toggle{margin-left:auto;display:inline-flex;gap:8px;align-items:center;font-size:.84rem;font-weight:500;color:var(--g900)}
+.ejemplo-toggle input{width:18px;height:18px;accent-color:var(--acc)}
+
+/* Diálogo y toasts */
+dialog{border:0;border-radius:16px;padding:0;max-width:min(440px,calc(100vw - 32px));box-shadow:var(--sh-lg);color:var(--ink)}
+dialog::backdrop{background:rgba(18,10,8,.6)}
+dialog form{padding:20px}
+dialog h2{font-size:1.1rem;margin-bottom:6px}
+dialog p{margin:0 0 16px;color:var(--mut);font-size:.92rem}
+dialog .row{display:flex;gap:8px;justify-content:flex-end}
+.toasts{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:150;width:min(520px,calc(100vw - 24px));pointer-events:none}
+.toast{background:var(--g950);color:#fff;border-radius:12px;padding:11px 14px;font-size:.88rem;box-shadow:var(--sh-lg);border-left:4px solid var(--acc);animation:tin .22s ease-out;pointer-events:auto}
+.toast b{color:#FF9A8B}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+footer.pie{padding:6px 0 40px;color:var(--faint);font-size:.8rem}
+footer.pie p{margin:0;max-width:900px}
+
+/* Responsive */
+@media(max-width:1180px){
+  .kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .kpi{grid-column:span 2}
+  .kpi:nth-child(n+4){grid-column:span 3}
+  .filters{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .filters .field.q{grid-column:1/-1}
+  .calls{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .band .nums{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .wrap{padding:0 14px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .kpi,.kpi:nth-child(n+4){grid-column:auto}
+  .kpi:last-child{grid-column:1/-1}
+  .calls{grid-template-columns:1fr}
+  .filters{grid-template-columns:1fr 1fr}
+  .band .nums{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .band .num:last-child{grid-column:1/-1}
+  .band .num b{font-size:1.2rem}
+  .top .sp{display:none}
+  .demo-strip{font-size:.78rem}
+  .demo-strip .wrap{gap:8px;padding-top:7px;padding-bottom:7px}
+  .demo-strip p{min-width:0;flex:1 1 calc(100% - 70px)}
+  .link-btn{padding:4px 11px;font-size:.76rem}
+  header.top .wrap{padding-top:10px;padding-bottom:12px;gap:8px 10px}
+  .brand{width:100%}
+  .brand img{height:26px}
+  .brand-app{font-size:.95rem;padding-left:10px}
+  .toplinks{order:2;width:100%;gap:2px;margin:0 -8px}
+  .toplinks a{padding:5px 8px;font-size:.88rem}
+  .chip-demo{order:3;font-size:.72rem}
+  #btn-export-top{order:4;margin-left:auto;padding:7px 12px;font-size:.9rem}
+  main{padding-top:16px}
+  .board{grid-auto-columns:82%}
+  .export-line{margin-left:0;width:100%}
+  .drawer{width:100vw}
+  .facts,.form{grid-template-columns:1fr}
+  .ejemplo{padding-left:8px;padding-right:8px}
+  .ejemplo-toggle{margin-left:0}
+  /* tabla -> tarjetas */
+  .tbl-wrap{overflow:visible}
+  table,thead,tbody,tr,td{display:block}
+  thead{position:absolute;left:-9999px}
+  tbody tr{padding:10px 12px;display:grid;grid-template-columns:1fr auto;gap:2px 10px}
+  tbody td{padding:2px 0}
+  tbody td.c-lead{grid-column:1/-1}
+  tbody td::before{content:attr(data-l);display:inline-block;font-family:var(--f-l);font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:6px;letter-spacing:.06em}
+  tbody td.c-lead::before{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Saltar al contenido</a>
+
+<div class="demo-strip" role="note" aria-label="Aviso de demostración">
+  <div class="wrap">
+    <span class="tag-demo">DEMO</span>
+    <p>Datos de ejemplo salvo los marcados <b>EN VIVO</b>. Los cambios se guardan solo en tu navegador. Así se vería con tus datos reales cuando se conecte tu WhatsApp. <b>Este panel no guarda DNI, correos ni cuentas bancarias.</b></p>
+    <button type="button" class="link-btn" id="btn-reset">Restablecer ejemplos</button>
+  </div>
+</div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Puertas y Blindajes, volver al sitio">
+      <img src="./assets/puertas-y-blindajes-rojo-contorno-negro.png" alt="Puertas y Blindajes" width="170" height="30">
+      <span class="brand-app">CRM de leads<small>Puertas y Blindajes</small></span>
+    </a>
+    <span class="chip-demo">Demo &middot; datos de ejemplo + leads en vivo</span>
+    <span class="sp"></span>
+    <nav class="toplinks" aria-label="Enlaces">
+      <a href="/">Volver al sitio</a>
+      <a href="/whatsapp">Simulador de WhatsApp</a>
+    </nav>
+    <button type="button" class="btn primary" id="btn-export-top">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      Exportar CSV
+    </button>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <noscript><p class="empty"><b>Este panel necesita JavaScript.</b>Actívalo para ver los leads.</p></noscript>
+
+  <div class="page-head">
+    <div>
+      <h1 id="h-hoy">Hoy</h1>
+      <p id="resumen-hoy"></p>
+    </div>
+    <div class="live-status" id="live-status" role="status" aria-live="polite"><span class="dot"></span><span>Cargando&hellip;</span></div>
+  </div>
+
+  <section class="band" aria-labelledby="h-mes">
+    <div>
+      <h2 id="h-mes">Tu mes hoy</h2>
+      <p class="sub"><span class="tagline">Cálculo simple</span>Con las cifras que nos diste en la llamada. Es el punto de partida para medir si el filtro mejora la calidad de los leads con la misma inversión. No es una proyección ni una promesa de resultados.</p>
+    </div>
+    <div class="nums">
+      <div class="num"><b>US$&nbsp;200&ndash;300</b><span>de pauta al mes en Meta</span></div>
+      <div class="num"><b>10&ndash;20</b><span>leads por día &asymp; 300&ndash;600 al mes</span></div>
+      <div class="num"><b>2&ndash;3</b><span>ventas al mes</span></div>
+      <div class="num res"><b>US$&nbsp;67&ndash;150</b><span>de pauta por cada venta</span></div>
+      <div class="num"><b>&asymp; 0,3&ndash;1&nbsp;%</b><span>de los leads termina en venta</span></div>
+    </div>
+    <p class="formula">Cálculo: <code>US$ 200 &divide; 3 ventas &asymp; US$ 67</code> &middot; <code>US$ 300 &divide; 2 ventas = US$ 150</code> de pauta por venta. Conversión: <code>2&ndash;3 ventas &divide; 300&ndash;600 leads &asymp; 0,3&ndash;1 %</code>. La idea no es subir la pauta: es que el equipo atienda primero a quien tiene capacidad de compra y que cada lead calificado sirva de señal a Meta.</p>
+  </section>
+
+  <section class="kpis" id="kpis" aria-label="Indicadores"></section>
+
+  <section class="block" aria-labelledby="h-calls">
+    <div class="sec-head">
+      <h2 id="h-calls">Atender ahora</h2>
+      <span class="sub" id="calls-sub"></span>
+    </div>
+    <div id="calls"></div>
+  </section>
+
+  <section class="block" aria-labelledby="h-leads">
+    <div class="sec-head">
+      <h2 id="h-leads">Todos los leads</h2>
+      <label class="ejemplo-toggle"><input type="checkbox" id="chk-ej" checked> Mostrar los leads de ejemplo</label>
+      <div class="tabs" role="group" aria-label="Vista">
+        <button type="button" id="tab-tablero" data-act="view" data-v="tablero" aria-pressed="true">Tablero</button>
+        <button type="button" id="tab-lista" data-act="view" data-v="lista" aria-pressed="false">Lista</button>
+      </div>
+    </div>
+
+    <div class="ejemplo" id="ejemplo">
+      <span class="rib" id="rib">EJEMPLO &middot; <b>datos ficticios</b></span>
+      <p class="ejemplo-note" id="ejemplo-note"></p>
+
+      <div class="filters" id="filters">
+        <div class="field q"><label for="f-q">Buscar</label><input id="f-q" type="search" placeholder="Nombre, WhatsApp, ubicación o proforma" autocomplete="off"></div>
+        <div class="field"><label for="f-cal">Calificación</label><select id="f-cal"></select></div>
+        <div class="field"><label for="f-etapa">Etapa</label><select id="f-etapa"></select></div>
+        <div class="field"><label for="f-linea">Línea</label><select id="f-linea"></select></div>
+        <div class="field"><label for="f-uso">Uso</label><select id="f-uso"></select></div>
+        <div class="field"><label for="f-camp">Campaña de origen</label><select id="f-camp"></select></div>
+        <button type="button" class="btn ghost" id="btn-clear">Limpiar filtros</button>
+      </div>
+
+      <div class="segs" id="segs" role="group" aria-label="Segmentos para exportar"></div>
+
+      <div id="view"></div>
+    </div>
+  </section>
+
+  <footer class="pie">
+    <p>CRM de demostración armado por IJV Agency con datos ficticios y los leads que genera la demo del asistente. Es la maqueta de lo que se arma en la implementación: la exportación es un archivo CSV, la &laquo;Se&ntilde;al a Meta&raquo; es una simulaci&oacute;n (hoy no hay CAPI conectado y no se env&iacute;a nada a Meta), los montos de proforma son ejemplos ilustrativos y las ediciones viven solo en este navegador. Este panel no guarda ni muestra DNI, correos ni cuentas bancarias.</p>
+  </footer>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dr-title" inert></aside>
+
+<dialog id="dlg" aria-labelledby="dlg-t">
+  <form method="dialog">
+    <h2 id="dlg-t"></h2>
+    <p id="dlg-p"></p>
+    <div class="row">
+      <button type="submit" value="cancel" class="btn ghost">Cancelar</button>
+      <button type="submit" value="ok" class="btn primary" id="dlg-ok">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- Constantes ---------- */
+var ENDPOINT='https://meta.ijvagency.com/webhook/puertasyblindajes-demo-panel';
+var Q=new URLSearchParams(location.search);
+var MOCK=Q.get('mock')==='1', FAKE=Q.get('fake')==='1', PRUEBAS=Q.get('incluir_pruebas')==='1';
+var LS_KEY='puertasyblindajes_crm_v1', LS_UI='puertasyblindajes_crm_ui';
+var LIMA=-5*3600*1000;
+var MESES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+var DIAS=['dom','lun','mar','mié','jue','vie','sáb'];
+var DIAS_L=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+var MESES_L=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','setiembre','octubre','noviembre','diciembre'];
+
+var ETAPAS=[
+  {id:'nuevo',n:'Nuevo',d:'Escribió; el asistente aún toma sus datos',c:'#8A7B73'},
+  {id:'calificado',n:'Calificado',d:'Línea, ubicación y expectativa de inversión claras',c:'#D08A00'},
+  {id:'visita',n:'Visita / llamada agendada',d:'Día y hora acordados con el asesor',c:'#C93232'},
+  {id:'proforma',n:'Proforma enviada',d:'El asesor ya envió la proforma',c:'#8F0606'},
+  {id:'adelanto',n:'Adelanto recibido (venta)',d:'Adelanto por transferencia: pasa a fabricación',c:'#1E7A46'},
+  {id:'descartado',n:'Curioso / Descartado',d:'Solo preguntaba o busca algo fuera de lo que ofrece',c:'#B5A9A1'}
+];
+var ETAPA_IDX={};ETAPAS.forEach(function(e,i){ETAPA_IDX[e.id]=i;});
+var CAL_RANK={'Caliente':0,'Tibio':1,'Frío':2,'Sin calificar':3};
+var CAL_CLS={'Caliente':'cal-caliente','Tibio':'cal-tibio','Frío':'cal-frio','Sin calificar':'cal-na'};
+var LINEAS=['Seguridad','Cortafuego','Bóveda / Antibalas','Seccional','Sin definir'];
+var USOS=['Vivienda','Negocio','Obra / B2B'];
+var CAMPS=['Seguridad','Cortafuego'];
+var SEGS=[
+  {id:'todos',n:'Todos',fn:function(){return true;}},
+  {id:'calientes',n:'Calientes',fn:function(l){return l.cal==='Caliente'&&l.etapa!=='descartado';}},
+  {id:'visitas',n:'Visitas / llamadas',fn:function(l){return l.etapa==='visita';}},
+  {id:'proformas',n:'Proformas enviadas',fn:function(l){return l.etapa==='proforma';}},
+  {id:'ventas',n:'Adelantos (ventas)',fn:function(l){return l.etapa==='adelanto';}},
+  {id:'curiosos',n:'Curiosos / descartados',fn:function(l){return l.etapa==='descartado';}}
+];
+
+/* ---------- Utilidades ---------- */
+function $(s,r){return (r||document).querySelector(s);}
+function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s));}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');}
+function digits(s){return String(s||'').replace(/\D/g,'');}
+function pad(n){return (n<10?'0':'')+n;}
+function lp(ms){var d=new Date(ms+LIMA);return {y:d.getUTCFullYear(),m:d.getUTCMonth(),d:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes(),wd:d.getUTCDay()};}
+function limaMs(y,m,d,h,mi){return Date.UTC(y,m,d,h,mi)-LIMA;}
+function dayKey(ms){var p=lp(ms);return Math.floor(Date.UTC(p.y,p.m,p.d)/86400000);}
+function hhmm(ms){var p=lp(ms);return pad(p.h)+':'+pad(p.mi);}
+function fmtDT(ms){var p=lp(ms);return p.d+' '+MESES[p.m]+', '+pad(p.h)+':'+pad(p.mi);}
+function fmtISO(ms){var p=lp(ms);return p.y+'-'+pad(p.m+1)+'-'+pad(p.d)+' '+pad(p.h)+':'+pad(p.mi);}
+function fmtDur(ms){var m=Math.max(1,Math.round(ms/60000));if(m<60)return m+' min';var h=Math.round(m/60);if(h<48)return h+' h';return Math.round(h/24)+' d';}
+function fmtAgo(ms){
+  var diff=Date.now()-ms;
+  if(diff<45000)return 'hace un momento';
+  if(diff<3600000)return 'hace '+Math.max(1,Math.round(diff/60000))+' min';
+  var dd=dayKey(Date.now())-dayKey(ms);
+  if(dd===0)return 'hace '+Math.round(diff/3600000)+' h';
+  if(dd===1)return 'ayer '+hhmm(ms);
+  var p=lp(ms);
+  if(dd<7)return DIAS[p.wd]+' '+p.d+' '+MESES[p.m];
+  return p.d+' '+MESES[p.m];
+}
+function fmtTel(t){var d=digits(t);if(d.length===11&&d.indexOf('51')===0)d=d.slice(2);if(d.length===9)return '+51 '+d.slice(0,3)+' '+d.slice(3,6)+' '+d.slice(6);return d?('+'+d):'Sin número';}
+function fmtS(n){return 'S/ '+Number(n||0).toLocaleString('es-PE');}
+function specTime(spec){
+  if(typeof spec==='number')return Date.now()-spec*60000;
+  var a=String(spec).split(','),d=+a[0],t=a[1].split(':'),h=+t[0],mi=+t[1],p=lp(Date.now());
+  var ms=limaMs(p.y,p.m,p.d-d,h,mi);
+  if(d===0&&ms>Date.now())ms-=86400000;
+  return ms;
+}
+function clean(s){return String(s==null?'':s).replace(/[\u0000-\u001f\u007f]+/g,' ').trim();}
+/* Defensa: si por error llegó un DNI, correo, contraseña o cuenta en un texto, se tapa antes de mostrarlo o exportarlo */
+function sinSecretos(s){
+  return String(s==null?'':s)
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g,'[correo omitido]')
+    .replace(/\b(contrase(?:ñ|n)a|password|passwd|dni|cci)\b\s*(?:es|:|=)?\s*[:=]?\s*\S+/gi,'$1 [dato omitido]')
+    .replace(/\b(cuenta\s+(?:bancaria|de ahorros|corriente)|n(?:ú|u)mero de cuenta|n[°º.]\s*de cuenta)\b\s*(?:es|:|=)?\s*[:=]?\s*[\d\s-]{6,}/gi,'$1 [dato omitido]')
+    .replace(/\b\d{12,}\b/g,'[número omitido]');
+}
+
+/* ---------- Almacenamiento local (nunca debe romper la página) ---------- */
+function readLS(k,fallback){try{var r=localStorage.getItem(k);if(r){var o=JSON.parse(r);if(o&&typeof o==='object')return o;}}catch(e){}return fallback;}
+function writeLS(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true;}catch(e){return false;}}
+
+/* ---------- Estado ---------- */
+var S={
+  local:readLS(LS_KEY,{}),ui:readLS(LS_UI,{}),
+  sample:[],live:[],liveOk:null,liveAt:0,fakeN:0,seen:null,
+  f:{q:'',cal:'',etapa:'',linea:'',uso:'',camp:'',seg:'todos'},
+  sort:{k:'ultima',dir:-1},view:'tablero',showEj:true,openId:null,lastFocus:null,all:[],byId:{}
+};
+if(S.ui&&(S.ui.view==='lista'||S.ui.view==='tablero'))S.view=S.ui.view;
+if(S.ui&&S.ui.showEj===false)S.showEj=false;
+function saveLocal(){writeLS(LS_KEY,S.local);}
+function loc(id){if(!S.local[id])S.local[id]={};return S.local[id];}
+function addEv(id,txt){var L=loc(id);if(!L.ev)L.ev=[];L.ev.push({t:Date.now(),x:txt});L.ts=Date.now();}
+
+/* ---------- Datos de EJEMPLO (ficticios: nombres inventados, teléfonos de mentira, montos ilustrativos) ---------- */
+/* [nombre, línea, uso, ubicación, medidas, fotos, obra, inversión, cal, etapa, estado, creado, campaña, anuncio, resp_s, programado, N.º proforma, monto S/, resumen] */
+var A_FB='Anuncio en Facebook',A_IG='Anuncio en Instagram',A_DM='Mensaje directo en Instagram';
+var B='Bóveda / Antibalas',OB='Obra / B2B',D='—';
+var RAW=[
+ ['Rolando Becerra Zea','Sin definir',D,D,D,D,D,D,'Tibio','nuevo','borrador',22,'Seguridad',A_FB,5,'','',0,'Escribió «información de puertas». Aún no dice para qué espacio la necesita.'],
+ ['Daniela Cuadros Pinto','Seguridad','Vivienda','San Borja',D,D,D,D,'Tibio','nuevo','borrador','0,08:50','Seguridad',A_IG,4,'','',0,'Quiere una puerta de seguridad para su departamento. Falta saber si ya midió el vano.'],
+ ['Hernán Valdivia Quiroz','Cortafuego',OB,'Arequipa',D,D,D,D,'Tibio','nuevo','borrador','1,20:30','Cortafuego',A_FB,6,'','',0,'Pregunta por puertas cortafuego para un edificio en Arequipa. Aún no dice cuántas necesita.'],
+ ['Gonzalo Arce Medina','Seguridad','Vivienda','Santiago de Surco','0,92 × 2,10 m','Sí','No','En línea','Caliente','calificado','borrador',40,'Seguridad',A_FB,4,'','',0,'Quiere un cuarto seguro en su casa. Ya midió el vano, envió fotos por dentro y por fuera y entiende que es una puerta de acero a medida.'],
+ ['Verónica Salas Roque','Cortafuego','Negocio','Lince','1,00 × 2,05 m','No','No','En línea','Caliente','calificado','borrador','0,10:15','Cortafuego',A_IG,5,'','',0,'Necesita una puerta cortafuego para su local. Tiene el vano medido; todavía no envía fotos.'],
+ ['Ramiro Echevarría Luna','Seguridad','Negocio','Miraflores','Sin medidas','Sí','Sí','En línea','Tibio','calificado','borrador','1,17:40','Seguridad',A_DM,6,'','',0,'Puerta de seguridad para su oficina. Habría que ampliar el vano; prefiere que el asesor vaya a medir.'],
+ ['Ana Lucía Barrantes Vega',B,'Negocio','Lima','Sin medidas','No','No','En línea','Tibio','calificado','borrador','2,11:05','Seguridad',A_FB,5,'','',0,'Consulta por una puerta de bóveda para su negocio. Quiere entender qué cambia entre modelos antes de decidir.'],
+ ['Marco Ibáñez Solari','Seguridad','Vivienda','La Molina','0,97 × 2,15 m','Sí','No','En línea','Caliente','visita','confirmada','3,15:20','Seguridad',A_FB,4,'jueves 11:00 · visita al showroom','',0,'Casa propia, vano medido y fotos. Acepta que es una inversión de varios miles de soles. Irá al showroom con su esposa.'],
+ ['Patricia Landa Ugarte','Cortafuego',OB,'Chiclayo','1,20 × 2,10 m','Sí','Sí','En línea','Caliente','visita','alerta_enviada','0,13:00','Cortafuego',A_IG,5,'viernes 10:30 · llamada del asesor','',0,'Proyecto de oficinas en Chiclayo; prefiere llamada por la distancia. Habría que ampliar un vano. El asesor aún debe confirmar el horario.'],
+ ['Eduardo Tapia Bernales','Seguridad','Vivienda','Jesús María','0,90 × 2,10 m','Sí','Sí','En línea','Caliente','visita','confirmada','4,12:30','Seguridad',A_FB,5,'viernes 15:00 · visita al showroom','',0,'Quiere cambiar su puerta actual y ampliar el vano. Tiene fotos. Visita agendada.'],
+ ['Silvana Torres Aguirre','Seguridad','Vivienda','Trujillo','0,95 × 2,12 m','Sí','No','En línea','Caliente','visita','alerta_enviada',95,'Seguridad',A_DM,4,'lunes 17:00 · llamada del asesor','',0,'Desde Trujillo: pide una llamada para ver si pueden instalar allá. El asesor confirma la cobertura.'],
+ ['Luis Alberto Zevallos Paz','Seguridad','Vivienda','Surquillo','1,00 × 2,15 m','Sí','No','En línea','Caliente','proforma','confirmada','6,16:10','Seguridad',A_FB,4,'','PF-0147',7400,'Ya visitó el showroom. Recibió dos proformas (acero con pintura y revestimiento MDF); decide esta semana.'],
+ ['Jimena Palacios Roca','Cortafuego',OB,'Lima','3 puertas · 1,00 × 2,10 m','Sí','No','En línea','Caliente','proforma','confirmada','9,10:00','Cortafuego',A_IG,5,'','PF-0149',19800,'Constructora: 3 puertas cortafuego para un edificio. Proforma enviada; falta que responda su área de compras.'],
+ ['Fabiola Montenegro Rivas','Seguridad','Vivienda','San Miguel','0,98 × 2,18 m','Sí','No','En línea','Caliente','adelanto','confirmada','16,12:20','Seguridad',A_FB,4,'','PF-0139',6400,'Eligió la proforma de acero. Adelanto por transferencia recibido; pasa a fabricación (los plazos los confirma el asesor).'],
+ ['Raúl Espinoza Cáceres','Cortafuego','Negocio','Arequipa','1,10 × 2,10 m','Sí','Sí','En línea','Caliente','adelanto','confirmada','21,15:45','Cortafuego',A_IG,5,'','PF-0141',8900,'Local comercial en Arequipa. Adelanto recibido tras la llamada; se coordinan las medidas finales.'],
+ ['Jhonatan Rojas Pariona','Seguridad','Vivienda','Callao',D,'No',D,'Por debajo','Frío','descartado','borrador','2,23:05','Seguridad',A_FB,5,'','',0,'Solo preguntó «¿cuánto cuesta?». Al saber que son puertas de acero a medida dijo que buscaba algo más económico. Se le agradeció y recibió el catálogo, sin agenda.'],
+ ['Milagros Cueva Tello','Sin definir',D,D,D,D,D,D,'Frío','descartado','borrador','3,10:50','Cortafuego',A_IG,4,'','',0,'Pulsó el anuncio por curiosidad y no respondió.'],
+ ['Kevin Ayala Bendezú','Seguridad','Vivienda','Huancayo',D,'No',D,'Por debajo','Frío','descartado','borrador','5,20:15','Seguridad',A_FB,5,'','',0,'Buscaba una puerta de madera o una reja económica; no entra en lo que ofrece la empresa.'],
+ ['Rosario Palomino Cruz','Seguridad','Vivienda','Ate','Sin medidas','No','No','Por debajo','Frío','descartado','borrador','7,13:25','Seguridad',A_FB,5,'','',0,'Pidió el catálogo y dijo que lo piensa cuando junte el dinero. Sin agenda.'],
+ ['Walter Cornejo Llerena','Cortafuego','Negocio','Puno',D,D,D,D,'Frío','descartado','borrador','9,22:10','Cortafuego',A_IG,6,'','',0,'Quería la instalación en Puno; la cobertura la confirma el asesor. Sin datos suficientes para calificar.'],
+ ['Camila Reátegui Soto','Cortafuego',D,'Lima',D,'No',D,D,'Frío','descartado','borrador','11,09:40','Cortafuego',A_FB,5,'','',0,'Estudiante: pedía datos para un trabajo de la universidad.'],
+ ['Julio Sánchez Pomalaza','Seccional','Negocio','Lima',D,'No',D,'Por debajo','Frío','descartado','borrador','13,18:05','Seguridad',A_FB,5,'','',0,'Quería solo el precio de una puerta seccional y lo comparó con otras. No siguió.'],
+ ['Beatriz Montalvo Quispe','Seguridad','Vivienda','Piura',D,'No',D,D,'Frío','descartado','borrador','15,12:30','Seguridad',A_DM,6,'','',0,'Dejó de responder al preguntarle por su expectativa de inversión.'],
+ ['Néstor Alcántara Vidal','Seguridad','Negocio','Lima',D,'No',D,'Por debajo','Frío','descartado','borrador','18,16:20','Seguridad',A_FB,5,'','',0,'Pidió el precio de 5 puertas «lo más barato». Sin datos de medidas ni fotos.']
+];
+function buildSample(){
+  S.sample=RAW.map(function(r,i){
+    return {id:'EJ-'+pad(i+1),origen:'ejemplo',nombre:r[0],tel:'9000000'+pad(i+1),linea:r[1],uso:r[2],ubic:r[3],medidas:r[4],fotos:r[5],obra:r[6],inv:r[7],
+      cal:r[8],etapa:r[9],estado:r[10],creado:specTime(r[11]),camp:r[12],anuncio:r[13],resp:r[14],prog:r[15],proforma:r[16],monto:r[17],resumen:r[18],sessionId:''};
+  });
+}
+
+/* ---------- Leads EN VIVO (tabla cierres_demo_puertasyblindajes) ---------- */
+function normCal(c){var n=norm(c);if(n.indexOf('calient')>-1)return 'Caliente';if(n.indexOf('tibi')>-1)return 'Tibio';if(n.indexOf('fri')>-1)return 'Frío';return 'Sin calificar';}
+function nLinea(v){var n=norm(v);if(!n)return 'Sin definir';
+  if(n.indexOf('cortafuego')>-1||n.indexOf('fuego')>-1)return 'Cortafuego';
+  if(n.indexOf('boveda')>-1||n.indexOf('antibal')>-1)return B;
+  if(n.indexOf('seccional')>-1||n.indexOf('garaje')>-1||n.indexOf('garage')>-1)return 'Seccional';
+  if(n.indexOf('segur')>-1||n.indexOf('blind')>-1)return 'Seguridad';
+  return 'Sin definir';}
+function nUso(v){var n=norm(v);if(!n)return D;
+  if(/viv|casa|hogar|depart|domic|residen/.test(n))return 'Vivienda';
+  if(/negocio|local|tienda|comerc|oficina|empresa|restaur|taller/.test(n))return 'Negocio';
+  if(/obra|b2b|constru|proyecto|edific|inmobil/.test(n))return OB;
+  return D;}
+function nSiNo(v){var n=norm(v);if(/^si\b/.test(n))return 'Sí';if(/^no\b/.test(n)&&!/dato/.test(n))return 'No';return D;}
+function nInv(v){var n=norm(v);if(!n)return D;
+  if(/por debajo|menor|bajo|economic|barat/.test(n))return 'Por debajo';
+  if(/en linea|acorde|dentro|acepta|ok/.test(n))return 'En línea';
+  return D;}
+function nMed(v){var t=clean(v);if(!t)return D;
+  if(/sin\s*medid|no\s*(?:tiene|sabe)|sin dato|^no$/i.test(t))return 'Sin medidas';
+  if(/^[\d.,\s x×]+$/i.test(t))t=t.replace(/\s*x\s*/gi,' × ').replace(/(\d)\.(\d)/g,'$1,$2')+' m';
+  return t.slice(0,60);}
+function nCamp(v){var n=norm(v);if(n.indexOf('cortafuego')>-1)return 'Cortafuego';if(n.indexOf('segur')>-1)return 'Seguridad';return D;}
+/* Formato canónico del context_summary; tolerante: lo que falte queda como «—» y el resto del texto va como resumen */
+var CLAVES={calificacion:'cal',linea:'linea',uso:'uso',ubicacion:'ubic',medidas:'medidas',fotos:'fotos',obra:'obra',inversion:'inv',campana:'camp',origen:'camp'};
+function parseSummary(txt){
+  var t=String(txt||''),bar=t.indexOf('|'),head=bar>-1?t.slice(0,bar):t,msg=bar>-1?t.slice(bar+1):'';
+  var o={},notas=[];
+  head.split(';').forEach(function(seg){
+    var s=seg.trim();if(!s)return;
+    /* fila draft: el 6.º campo del marcador empieza con «Caliente;» sin la etiqueta «Calificación:» */
+    if(!o.cal&&/^(caliente|tibio|fr[ií]o)\.?$/i.test(s)){o.cal=s;return;}
+    var m=s.match(/^([^:]{2,24}?)\s*:\s*([\s\S]+)$/);
+    var k=m?CLAVES[norm(m[1]).replace(/[^a-z ]/g,'').trim()]:null;
+    if(k)o[k]=clean(m[2]);else if(!/^nota\.?$/i.test(s))notas.push(s.replace(/^nota\s*:\s*/i,''));
+  });
+  var nota=notas.join('. ').trim(),m2=clean(msg);
+  var texto=[nota,m2?('Escribió: «'+m2+'»'):''].filter(Boolean).join(' · ');
+  o.texto=texto;return o;
+}
+function parseProg(v){
+  var s=clean(v);if(!s)return '';
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?$/);
+  if(m){var ms=limaMs(+m[1],+m[2]-1,+m[3],+m[4],+m[5]),p=lp(ms);return DIAS_L[p.wd]+' '+p.d+' '+MESES[p.m]+', '+pad(p.h)+':'+pad(p.mi);}
+  var t=Date.parse(s);if(!isNaN(t)&&/\d{4}-\d{2}-\d{2}T/.test(s)){var q=lp(t);return DIAS_L[q.wd]+' '+q.d+' '+MESES[q.m]+', '+pad(q.h)+':'+pad(q.mi);}
+  return s.slice(0,80);
+}
+function normLive(r){
+  if(!r||typeof r!=='object')return null;
+  var sid=clean(r.session_id);
+  if(!PRUEBAS&&/^(ijv-smoke|eval_|ensayo_|qa-|panel-check|smoke-demo)/i.test(sid))return null;
+  /* Las ediciones locales se guardan por session_id: lead_id cambia (BORRADOR-<sesión> -> CIERRE-<epoch>) al pasar de estado */
+  var id=sid||clean(r.lead_id);if(!id)return null;
+  var res=sinSecretos(clean(r.resumen)).slice(0,700),P=parseSummary(res);
+  var cal=normCal(r.calificacion||P.cal);
+  var raw=clean(r.estado).toLowerCase();
+  var estado={draft:'borrador',pending:'alerta_enviada',verified:'confirmada',rejected:'rechazada'}[raw]||raw;
+  /* Mapeo estado -> etapa (ver encabezado) */
+  var etapa;
+  if(estado==='alerta_enviada'||estado==='confirmada')etapa='visita';
+  else if(estado==='rechazada')etapa='descartado';
+  else if(estado==='borrador')etapa=(cal==='Frío')?'descartado':(cal==='Sin calificar'?'nuevo':'calificado');
+  else etapa='nuevo';
+  var cr=Date.parse(r.creado);if(isNaN(cr))cr=Date.now();
+  return {id:'V-'+id,origen:'en vivo',nombre:clean(r.nombre)||'Sin nombre',tel:digits(r.telefono),
+    linea:nLinea(P.linea),uso:nUso(P.uso),ubic:clean(P.ubic)&&!/^sin dato$/i.test(P.ubic||'')?clean(P.ubic).slice(0,50):D,medidas:nMed(P.medidas),fotos:nSiNo(P.fotos),obra:nSiNo(P.obra),inv:nInv(P.inv),
+    cal:cal,etapa:etapa,estado:estado,creado:cr,camp:nCamp(P.camp),anuncio:'Simulador de WhatsApp (demo)',resp:0,prog:parseProg(r.programado_para),
+    proforma:'',monto:0,resumen:P.texto||res,sessionId:sid};
+}
+function fakeResponse(n){
+  var now=Date.now(),leads=[
+    {lead_id:'CIERRE-FAKE-1',session_id:'web_fake1',nombre:'Prueba En Vivo Uno',telefono:'900000901',calificacion:'Caliente',resumen:'Calificación: Caliente; Línea: Seguridad; Uso: Vivienda; Ubicación: Surco; Medidas: 0.97 x 2.15; Fotos: sí; Obra: no; Inversión: en línea; quiere visita al showroom | Ya medí el vano y tengo fotos',estado:'pending',programado_para:'',creado:new Date(now-5*60000).toISOString()},
+    {lead_id:'CIERRE-FAKE-2',session_id:'web_fake2',nombre:'Prueba En Vivo Dos',telefono:'900000902',calificacion:'Tibio',resumen:'Calificación: Tibio; Línea: Cortafuego; Uso: Negocio; Ubicación: Lima; Medidas: sin medidas; Fotos: no; Obra: sin dato; Inversión: sin dato; compara modelos | Necesito puertas cortafuego para mi local',estado:'verified',programado_para:'2026-10-29 11:00',creado:new Date(now-2*3600000).toISOString()},
+    {lead_id:'BORRADOR-web_fake3',session_id:'web_fake3',nombre:'Prueba En Vivo Tres',telefono:'900000903',calificacion:'Frío',resumen:'Calificación: Frío; Línea: Seguridad; Uso: Vivienda; Ubicación: sin dato; Medidas: sin medidas; Fotos: no; Obra: sin dato; Inversión: por debajo; busca lo más económico | ¿Cuánto cuesta una puerta blindada?',estado:'draft',programado_para:'',creado:new Date(now-26*3600000).toISOString()}
+  ];
+  if(n>=2)leads.push({lead_id:'BORRADOR-web_fake4',session_id:'web_fake4',nombre:'Prueba En Vivo Cuatro',telefono:'900000904',calificacion:'Caliente',resumen:'Calificación: Caliente; Línea: Bóveda; nota | Necesito una puerta de bóveda',estado:'draft',creado:new Date(now-60000).toISOString()});
+  return {ok:true,generado:new Date().toISOString(),leads:leads};
+}
+function pull(){
+  if(MOCK)return Promise.resolve();
+  var p;
+  if(FAKE){p=new Promise(function(res){setTimeout(function(){res(fakeResponse(++S.fakeN));},120);});}
+  else{
+    var ctl=('AbortController' in window)?new AbortController():null,t=setTimeout(function(){if(ctl)ctl.abort();},8000);
+    p=fetch(ENDPOINT+(PRUEBAS?'?incluir_pruebas=1':''),{headers:{'Accept':'application/json'},cache:'no-store',signal:ctl?ctl.signal:undefined}).then(function(r){clearTimeout(t);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+  }
+  return p.then(function(data){
+    if(!data||data.ok!==true||!Array.isArray(data.leads))throw new Error('formato');
+    var list=data.leads.map(function(r){try{return normLive(r);}catch(e){return null;}}).filter(Boolean);
+    var ids={};list.forEach(function(l){ids[l.id]=1;});
+    if(S.seen){list.forEach(function(l){if(!S.seen[l.id])toast('Nuevo lead <b>EN VIVO</b>: '+esc(l.nombre)+' ('+esc(l.cal)+')');});}
+    S.seen=ids;S.live=list;S.liveOk=true;S.liveAt=Date.now();
+  }).catch(function(){S.liveOk=false;}).then(function(){render();});
+}
+
+/* ---------- Mezcla de datos ---------- */
+function buildAll(){
+  var out=[],seen={};
+  var src=S.live.concat(S.showEj?S.sample:[]);
+  src.forEach(function(b){
+    if(seen[b.id])return;seen[b.id]=1;
+    var L=S.local[b.id]||{};
+    out.push({id:b.id,origen:b.origen,nombre:b.nombre,tel:b.tel,linea:b.linea,uso:b.uso,ubic:b.ubic,medidas:b.medidas,fotos:b.fotos,obra:b.obra,inv:b.inv,cal:b.cal,
+      etapa:L.etapa||b.etapa,camp:b.camp,anuncio:b.anuncio,resp:b.resp,prog:b.prog,resumen:b.resumen,creado:b.creado,ultima:Math.max(b.creado,L.ts||0),
+      estado:b.estado,sessionId:b.sessionId,confirmada:(L.confirmada!==undefined)?!!L.confirmada:b.estado==='confirmada',
+      proforma:(L.proforma!==undefined)?L.proforma:b.proforma,monto:(L.monto!==undefined)?L.monto:b.monto,
+      enCurso:!!L.enCurso,notas:L.notas||'',ev:L.ev||[]});
+  });
+  S.all=out;S.byId={};out.forEach(function(l){S.byId[l.id]=l;});
+}
+/* Señales a Meta (SIMULADAS): hoy no hay CAPI conectado; es la propuesta */
+function sCalif(l){return (l.cal==='Caliente'||l.cal==='Tibio')&&l.etapa!=='descartado';}
+function sVisita(l){return l.etapa==='visita'||l.etapa==='proforma'||l.etapa==='adelanto';}
+function sProforma(l){return l.etapa==='proforma'||l.etapa==='adelanto';}
+function sCompra(l){return l.etapa==='adelanto';}
+function sTop(l){return sCompra(l)?'Compra':sProforma(l)?'Proforma enviada':sVisita(l)?'Visita / llamada agendada':sCalif(l)?'Lead calificado':'';}
+function porAtender(l){return l.cal==='Caliente'&&(l.etapa==='nuevo'||l.etapa==='calificado'||(l.etapa==='visita'&&!l.confirmada));}
+function filtered(){
+  var f=S.f,q=norm(f.q),qd=digits(f.q),seg=SEGS.filter(function(s){return s.id===f.seg;})[0]||SEGS[0];
+  return S.all.filter(function(l){
+    if(f.cal&&l.cal!==f.cal)return false;
+    if(f.etapa&&l.etapa!==f.etapa)return false;
+    if(f.linea&&l.linea!==f.linea)return false;
+    if(f.uso&&l.uso!==f.uso)return false;
+    if(f.camp&&l.camp!==f.camp)return false;
+    if(!seg.fn(l))return false;
+    if(q&&norm(l.nombre+' '+l.ubic+' '+l.linea+' '+l.notas+' '+l.proforma).indexOf(q)<0&&!(qd.length>=3&&l.tel.indexOf(qd)>-1))return false;
+    return true;
+  });
+}
+function cmp(k){
+  return function(a,b){
+    var r=0;
+    if(k==='nombre'||k==='linea'||k==='ubic'||k==='camp'||k==='origen')r=norm(a[k])<norm(b[k])?-1:norm(a[k])>norm(b[k])?1:0;
+    else if(k==='cal')r=CAL_RANK[a.cal]-CAL_RANK[b.cal];
+    else if(k==='etapa')r=ETAPA_IDX[a.etapa]-ETAPA_IDX[b.etapa];
+    else r=a.ultima-b.ultima;
+    return r*S.sort.dir;
+  };
+}
+
+/* ---------- Render: piezas ---------- */
+function chipCal(c){return '<span class="chip '+CAL_CLS[c]+'">'+esc(c)+'</span>';}
+function chipOrigen(l){return l.origen==='en vivo'?'<span class="chip live"><span class="dot on"></span>EN VIVO</span>':'<span class="chip ex">ejemplo</span>';}
+function chipCamp(l){return l.camp&&l.camp!==D?'<span class="chip '+(l.camp==='Cortafuego'?'camp-c':'camp-s')+'">'+esc(l.camp)+'</span>':'';}
+function etapaNombre(id){return ETAPAS[ETAPA_IDX[id]].n;}
+function sinDato(v){return (!v||v==='—')?'Sin dato':v;}
+function lugarLinea(l){return [l.linea!=='Sin definir'?l.linea:'Línea sin definir',l.uso!==D?l.uso:'',l.ubic!==D?l.ubic:''].filter(Boolean).join(' · ');}
+function motivoCorto(l){var t=l.resumen||'';var m=t.match(/^.*?[.!?](?=\s+[A-ZÁÉÍÓÚÑ¿¡«]|$)/);var s=(m?m[0]:t);return s.length>150?s.slice(0,147)+'…':s;}
+
+function renderKpis(){
+  var all=S.all,p=lp(Date.now()),hoyK=dayKey(Date.now());
+  var hoy=all.filter(function(l){return dayKey(l.creado)===hoyK;}).length;
+  var mes=all.filter(function(l){var q=lp(l.creado);return q.y===p.y&&q.m===p.m;}).length;
+  var calif=all.filter(sCalif).length;
+  var pct=all.length?Math.round(calif*100/all.length):0;
+  var vis=all.filter(function(l){return l.etapa==='visita';}).length;
+  var llego=all.filter(sVisita).length;
+  var tasaV=all.length?Math.round(llego*100/all.length):0;
+  var pro=all.filter(function(l){return l.etapa==='proforma';});
+  var montoPro=pro.reduce(function(a,l){return a+(Number(l.monto)||0);},0);
+  var ven=all.filter(sCompra);
+  var montoVen=ven.reduce(function(a,l){return a+(Number(l.monto)||0);},0);
+  var tasaVen=all.length?(Math.round(ven.length*1000/all.length)/10).toLocaleString('es-PE'):'0';
+  var items=[
+    {n:hoy,l:'Leads hoy',s:mes+(mes===1?' lead':' leads')+' en lo que va del mes'},
+    {n:pct+' %',l:'Calificados',s:calif+' de '+all.length+' leads (Caliente o Tibio): el resto son curiosos'},
+    {n:vis,l:'Visitas / llamadas',s:'agendadas con el asesor · lead → visita o más: '+tasaV+' %',hot:1},
+    {n:pro.length,l:'Proformas abiertas',s:(montoPro?fmtS(montoPro)+' en proformas (montos de ejemplo)':'enviadas por el asesor, esperando respuesta')},
+    {n:ven.length,l:'Adelantos (ventas)',s:'lead → venta: '+tasaVen+' %'+(montoVen?' · '+fmtS(montoVen)+' en proformas cerradas (ejemplo)':''),win:1}
+  ];
+  $('#kpis').innerHTML=items.map(function(k){return '<div class="kpi'+(k.hot?' hot':'')+(k.win?' win':'')+'"><div class="n">'+esc(k.n)+'</div><div class="l">'+esc(k.l)+'</div><div class="s">'+esc(k.s)+'</div></div>';}).join('');
+  $('#h-hoy').textContent='Hoy · '+DIAS_L[p.wd]+' '+p.d+' de '+MESES_L[p.m];
+  var esp=all.filter(porAtender).length;
+  $('#resumen-hoy').textContent=(esp?esp+(esp===1?' lead caliente espera al asesor.':' leads calientes esperan al asesor.'):'Ningún lead caliente espera al asesor ahora.')+' El asistente atiende a todos al instante, también de noche y fines de semana.';
+}
+function renderLive(){
+  var el=$('#live-status'),h;
+  if(MOCK)h='<span class="dot"></span><span>Solo datos de ejemplo</span>';
+  else if(S.liveOk===true)h='<span class="dot on"></span><span>'+(S.live.length?'En vivo · '+S.live.length+(S.live.length===1?' lead de la demo':' leads de la demo'):'En vivo · conectado, aún sin leads de la demo')+' · actualizado '+hhmm(S.liveAt)+'</span>';
+  else if(S.liveOk===false)h='<span class="dot warn"></span><span>'+(S.liveAt?'Conexión intermitente con los leads en vivo':'En vivo no disponible por ahora · se muestran los ejemplos')+'</span>';
+  else h='<span class="dot"></span><span>Conectando con los leads en vivo…</span>';
+  el.innerHTML=h;
+}
+function renderEjemploUI(){
+  var nEj=S.sample.length;
+  $('#rib').innerHTML=S.showEj?'EJEMPLO &middot; <b>'+nEj+' leads con datos ficticios</b>':'Solo <b>leads en vivo</b>';
+  $('#ejemplo-note').textContent=S.showEj
+    ?'Los leads rotulados «ejemplo» son inventados: nombres de fantasía, teléfonos de mentira y montos de proforma ilustrativos. Sirven para mostrar cómo se ve el filtro. Los marcados EN VIVO vienen del simulador de WhatsApp. No es una promesa de resultados.'
+    :'Se muestran solo los leads que llegan del simulador de WhatsApp (EN VIVO).';
+  $('#chk-ej').checked=S.showEj;
+  $('#ejemplo').style.borderStyle=S.showEj?'dashed':'solid';
+}
+function proxBtn(l){
+  if(l.etapa==='visita'&&!l.confirmada)return '<button type="button" class="btn ghost sm" data-act="confirmar-visita" data-id="'+esc(l.id)+'">Marcar confirmada</button>';
+  return '<button type="button" class="btn ghost sm" data-act="mover-a" data-id="'+esc(l.id)+'" data-e="visita">Visita / llamada agendada</button>';
+}
+function renderCalls(){
+  var list=S.all.filter(porAtender).sort(function(a,b){return a.creado-b.creado;});
+  $('#calls-sub').textContent='leads calientes: saben qué puerta quieren, tienen ubicación y aceptan que es una inversión · los que llevan más tiempo esperando, primero';
+  var box=$('#calls');
+  if(!list.length){box.innerHTML='<div class="empty"><b>Nadie por atender ahora</b>Cuando el asistente califique a alguien como caliente, aparece aquí con su resumen.</div>';return;}
+  var max=S.callsAll?list.length:(window.innerWidth<760?3:6),shown=list.slice(0,max);
+  box.innerHTML='<div class="calls">'+shown.map(function(l){
+    var espera=l.enCurso?'':'<span class="wait">espera hace '+fmtDur(Date.now()-l.creado)+'</span>';
+    var med=(l.medidas!==D?'Vano '+l.medidas:'Vano sin medir')+(l.fotos==='Sí'?' · con fotos':'');
+    return '<article class="call'+(l.enCurso?' on-call':'')+'">'+
+      '<div class="top-row"><button type="button" class="who" data-act="open" data-id="'+esc(l.id)+'">'+esc(l.nombre)+'</button>'+chipCal(l.cal)+'</div>'+
+      '<div class="course">'+esc(lugarLinea(l))+'</div><div class="course">'+esc(med)+(l.prog?' · '+esc(l.prog):'')+'</div>'+
+      '<p class="why">'+esc(motivoCorto(l))+'</p>'+
+      '<div class="meta">'+chipOrigen(l)+chipCamp(l)+espera+'<span>'+esc(etapaNombre(l.etapa))+(l.etapa==='visita'&&!l.confirmada?' (por confirmar)':'')+'</span></div>'+
+      '<div class="acts">'+(l.enCurso?
+        '<span class="chip live" style="padding:5px 11px"><span class="dot on"></span>Asesor avisado</span>'+proxBtn(l):
+        '<button type="button" class="btn gold" data-act="avisar" data-id="'+esc(l.id)+'">Avisar al asesor</button><button type="button" class="btn ghost sm" data-act="open" data-id="'+esc(l.id)+'">Ver detalle</button>')+
+      '</div></article>';
+  }).join('')+'</div>'+(list.length>max?'<div class="calls-more"><button type="button" class="btn ghost sm" data-act="calls-all">Ver los '+list.length+' leads por atender</button></div>':'');
+}
+function renderFiltersUI(){
+  function opt(v,t,sel){return '<option value="'+esc(v)+'"'+(sel?' selected':'')+'>'+esc(t)+'</option>';}
+  var f=S.f;
+  $('#f-cal').innerHTML=opt('','Todas',!f.cal)+['Caliente','Tibio','Frío','Sin calificar'].filter(function(c){return c!=='Sin calificar'||S.all.some(function(l){return l.cal===c;});}).map(function(c){return opt(c,c,f.cal===c);}).join('');
+  $('#f-etapa').innerHTML=opt('','Todas las etapas',!f.etapa)+ETAPAS.map(function(e){return opt(e.id,e.n,f.etapa===e.id);}).join('');
+  $('#f-linea').innerHTML=opt('','Todas',!f.linea)+LINEAS.map(function(v){return opt(v,v,f.linea===v);}).join('');
+  $('#f-uso').innerHTML=opt('','Todos',!f.uso)+USOS.map(function(v){return opt(v,v,f.uso===v);}).join('');
+  $('#f-camp').innerHTML=opt('','Todas',!f.camp)+CAMPS.map(function(v){return opt(v,'Campaña '+v,f.camp===v);}).join('');
+  if($('#f-q').value!==f.q)$('#f-q').value=f.q;
+}
+function renderSegs(rows){
+  var seg=SEGS.filter(function(s){return s.id===S.f.seg;})[0];
+  var h='<span class="lbl">Segmentos</span>'+SEGS.map(function(s){
+    var n=S.all.filter(s.fn).length;
+    return '<button type="button" class="seg" data-act="seg" data-id="'+s.id+'" aria-pressed="'+(S.f.seg===s.id)+'">'+esc(s.n)+'<span class="c">'+n+'</span></button>';
+  }).join('');
+  h+='<span class="export-line"><span><b>'+rows.length+'</b> '+(rows.length===1?'lead':'leads')+' a exportar ('+esc(seg.n.toLowerCase())+')</span><button type="button" class="btn primary sm" data-act="export">Exportar CSV</button></span>';
+  $('#segs').innerHTML=h;
+}
+function cardHTML(l){
+  var opts=ETAPAS.map(function(e){return '<option value="'+e.id+'"'+(e.id===l.etapa?' selected':'')+'>'+esc(e.n)+'</option>';}).join('');
+  var top=sTop(l);
+  var vis=l.etapa==='visita'?(l.confirmada?'<span class="chip ok">confirmada</span>':'<span class="chip por">por confirmar</span>'):'';
+  var med=(l.medidas!==D?l.medidas:'sin medidas')+(l.fotos==='Sí'?' · fotos':'');
+  return '<li><article class="lead'+(l.origen==='en vivo'?' is-live':'')+'" draggable="true" data-id="'+esc(l.id)+'">'+
+    '<button type="button" class="main" data-act="open" data-id="'+esc(l.id)+'" aria-label="Abrir a '+esc(l.nombre)+'">'+
+      '<span class="l1"><span class="nm">'+esc(l.nombre)+'</span>'+chipCal(l.cal)+'</span>'+
+      '<span class="cs" style="display:block">'+esc(lugarLinea(l))+'</span>'+
+      '<span class="cs" style="display:block">Vano: '+esc(med)+'</span>'+
+      '<span class="mt">'+chipCamp(l)+vis+(l.proforma?'<span class="chip st">'+esc(l.proforma)+(l.monto?' · '+esc(fmtS(l.monto)):'')+'</span>':'')+(l.enCurso?'<span class="chip live"><span class="dot on"></span>asesor avisado</span>':'')+'<span>'+esc(fmtAgo(l.ultima))+'</span></span>'+
+      (top?'<span class="mt"><span class="meta-badge on" title="Simulado: hoy no se envía nada a Meta">Meta &#10003; '+esc(top)+'</span></span>':'')+
+    '</button>'+
+    '<div class="ft">'+chipOrigen(l)+'<select class="mv" data-chg="mover" data-id="'+esc(l.id)+'" aria-label="Mover a '+esc(l.nombre)+' a otra etapa">'+opts+'</select></div>'+
+  '</article></li>';
+}
+function renderBoard(rows){
+  var cols=ETAPAS.filter(function(e){return !S.f.etapa||e.id===S.f.etapa;});
+  $('#view').innerHTML='<div class="board" role="list" aria-label="Tablero por etapas">'+cols.map(function(e){
+    var items=rows.filter(function(l){return l.etapa===e.id;});
+    items.sort(function(a,b){return (CAL_RANK[a.cal]-CAL_RANK[b.cal])||(b.ultima-a.ultima);});
+    return '<section class="col" role="listitem" style="--st:'+e.c+'" data-etapa="'+e.id+'" aria-label="'+esc(e.n)+', '+items.length+'">'+
+      '<div class="col-h"><h3>'+esc(e.n)+'</h3><span class="n">'+items.length+'</span></div><div class="col-d">'+esc(e.d)+'</div>'+
+      (items.length?'<ul>'+items.map(cardHTML).join('')+'</ul>':'<div class="none">Sin leads en esta etapa</div>')+'</section>';
+  }).join('')+'</div>';
+}
+function renderList(rows){
+  var cols=[['nombre','Lead'],['linea','Línea · uso'],['ubic','Ubicación'],['medidas','Medidas'],['cal','Calificación'],['etapa','Etapa'],['camp','Campaña'],['ultima','Última interacción'],['origen','Fuente']];
+  var th=cols.map(function(c){
+    var on=S.sort.k===c[0];
+    var sortable=c[0]!=='medidas';
+    return '<th scope="col"'+(on?' aria-sort="'+(S.sort.dir>0?'ascending':'descending')+'"':'')+'>'+(sortable?'<button type="button" data-act="sort" data-k="'+c[0]+'">'+c[1]+(on?(S.sort.dir>0?' ▲':' ▼'):'')+'</button>':'<button type="button" disabled style="cursor:default">'+c[1]+'</button>')+'</th>';
+  }).join('');
+  var sorted=rows.slice().sort(cmp(S.sort.k));
+  var tb=sorted.map(function(l){
+    return '<tr data-act="open" data-id="'+esc(l.id)+'">'+
+      '<td class="c-lead" data-l="Lead"><button type="button" class="row-link" data-act="open" data-id="'+esc(l.id)+'">'+esc(l.nombre)+'</button><div class="tel">'+esc(fmtTel(l.tel))+'</div></td>'+
+      '<td data-l="Línea">'+esc(l.linea)+(l.uso!==D?' · '+esc(l.uso):'')+'</td>'+
+      '<td data-l="Ubicación">'+esc(l.ubic)+'</td>'+
+      '<td data-l="Medidas">'+esc(l.medidas)+'</td>'+
+      '<td data-l="Calificación">'+chipCal(l.cal)+'</td>'+
+      '<td data-l="Etapa"><span class="chip st">'+esc(etapaNombre(l.etapa))+'</span></td>'+
+      '<td data-l="Campaña">'+(chipCamp(l)||'—')+'</td>'+
+      '<td data-l="Última interacción">'+esc(fmtAgo(l.ultima))+'</td>'+
+      '<td data-l="Fuente">'+chipOrigen(l)+'</td></tr>';
+  }).join('');
+  $('#view').innerHTML='<div class="tbl-wrap"><table><thead><tr>'+th+'</tr></thead><tbody>'+tb+'</tbody></table></div>';
+}
+function renderEmptyFiltered(){
+  $('#view').innerHTML='<div class="empty"><b>No hay leads con estos filtros</b>Prueba con otra calificación, línea o segmento.<br><button type="button" class="btn ghost" data-act="clear">Limpiar filtros</button></div>';
+}
+function render(){
+  buildAll();
+  renderLive();renderEjemploUI();renderKpis();renderCalls();renderFiltersUI();
+  var rows=filtered();
+  renderSegs(rows);
+  $('#tab-tablero').setAttribute('aria-pressed',S.view==='tablero');
+  $('#tab-lista').setAttribute('aria-pressed',S.view==='lista');
+  if(!rows.length)renderEmptyFiltered();else if(S.view==='tablero')renderBoard(rows);else renderList(rows);
+  if(S.openId)renderDrawer(true);
+}
+
+/* ---------- Cajón de detalle ---------- */
+function timeline(l){
+  var ev=[];
+  if(l.origen==='ejemplo'){
+    var t0=l.creado-6*60000;
+    ev.push({t:t0,x:'Llegó desde: '+l.anuncio+(l.camp!==D?' (campaña '+l.camp+')':'')+'.'});
+    ev.push({t:t0+3000,x:'El asistente respondió en '+l.resp+' s.'});
+    ev.push({t:l.creado,x:'El asistente calificó al lead como '+l.cal+'.'});
+    if(sCalif(l))ev.push({t:l.creado+1000,x:'Señal «Lead calificado» enviada a Meta (simulada).'});
+    if(l.etapa==='descartado')ev.push({t:l.creado+2000,x:'Filtro de expectativa: se le agradeció y recibió el catálogo, sin agenda.'});
+    if(sVisita(l))ev.push({t:l.creado+90000,x:'Se acordó '+(l.prog||'una visita o llamada')+'; se avisó al asesor.'});
+    if(sProforma(l))ev.push({t:l.creado+86400000,x:'El asesor envió la proforma '+(l.proforma||'')+'. Señal «Proforma enviada» a Meta (simulada).'});
+    if(sCompra(l))ev.push({t:l.ultima,x:'Adelanto recibido por transferencia. Señal «Compra» enviada a Meta (simulada).'});
+  }else{
+    ev.push({t:l.creado,x:'El asistente anotó los datos de la conversación con la demo y lo calificó como '+l.cal+'.'});
+    if(sCalif(l))ev.push({t:l.creado+1000,x:'Señal «Lead calificado» enviada a Meta (simulada).'});
+    if(l.estado==='alerta_enviada'||l.estado==='confirmada')ev.push({t:l.creado+2000,x:'Se envió la alerta al asesor para agendar'+(l.prog?' ('+l.prog+')':'')+'.'});
+    if(l.estado==='confirmada')ev.push({t:l.creado+3000,x:'El asesor confirmó el día y la hora.'});
+    if(l.estado==='rechazada')ev.push({t:l.creado+2000,x:'El lead rechazó el contacto del asesor.'});
+    if(l.etapa==='descartado'&&l.estado==='borrador')ev.push({t:l.creado+2000,x:'Filtro de expectativa: sin agenda; se le agradeció y recibió el catálogo.'});
+  }
+  var all=ev.map(function(e){e.loc=false;return e;}).concat(l.ev.map(function(e){return {t:e.t,x:e.x,loc:true};}));
+  return all.sort(function(a,b){return a.t-b.t;});
+}
+function metaBadge(on,txt){return '<span class="meta-badge '+(on?'on':'')+'">'+(on?'&#10003; ':'')+txt+' &rarr; '+(on?'enviado':'sin enviar')+' a Meta (simulada)</span>';}
+function drawerHTML(l){
+  var acts='';
+  if(porAtender(l))acts+=l.enCurso?'<span class="chip live" style="padding:6px 12px"><span class="dot on"></span>Asesor avisado</span>':'<button type="button" class="btn gold" id="d-avisar" data-act="avisar" data-id="'+esc(l.id)+'">Avisar al asesor</button>';
+  if(l.etapa==='nuevo'||l.etapa==='calificado')acts+='<button type="button" class="btn primary" data-act="mover-a" data-id="'+esc(l.id)+'" data-e="visita">Marcar visita / llamada agendada</button>';
+  if(l.etapa==='visita'&&!l.confirmada)acts+='<button type="button" class="btn ghost" data-act="confirmar-visita" data-id="'+esc(l.id)+'">Marcar horario confirmado</button>';
+  if(l.etapa==='visita')acts+='<button type="button" class="btn primary" data-act="mover-a" data-id="'+esc(l.id)+'" data-e="proforma">Marcar proforma enviada</button>';
+  if(l.etapa==='proforma')acts+='<button type="button" class="btn primary" data-act="adelanto" data-id="'+esc(l.id)+'">Marcar adelanto recibido</button>';
+  if(l.etapa==='adelanto')acts+='<span class="chip ok" style="padding:6px 12px">Venta · adelanto recibido</span>';
+  if(l.etapa==='descartado')acts+='<button type="button" class="btn ghost" data-act="mover-a" data-id="'+esc(l.id)+'" data-e="calificado">Reabrir como calificado</button>';
+  function o(v,t,s){return '<option value="'+esc(v)+'"'+(s?' selected':'')+'>'+esc(t)+'</option>';}
+  var etapaOpts=ETAPAS.map(function(e){return o(e.id,e.n,e.id===l.etapa);}).join('');
+  var tl=timeline(l).map(function(e){return '<li class="'+(e.loc?'loc':'')+'"><time>'+esc(fmtDT(e.t))+(e.loc?' · tu cambio, solo en este navegador':'')+'</time>'+esc(e.x)+'</li>';}).join('');
+  var metaList='<div class="meta-list">'+metaBadge(sCalif(l),'Lead calificado')+metaBadge(sVisita(l),'Visita / llamada agendada')+metaBadge(sProforma(l),'Proforma enviada')+metaBadge(sCompra(l),'Compra (adelanto)')+'</div>';
+  var inv=l.inv==='En línea'?'En línea con una puerta a medida':l.inv==='Por debajo'?'Por debajo de lo que cuesta':sinDato(l.inv);
+  return '<div class="dr-head"><div style="min-width:0"><h2 id="dr-title">'+esc(l.nombre)+'</h2><p class="dr-sub"><span>WhatsApp '+esc(fmtTel(l.tel))+'</span>'+(l.tel?'<button type="button" class="btn" id="d-copy" data-act="copiar" data-id="'+esc(l.id)+'">Copiar número</button>':'')+'</p></div><button type="button" class="icon-btn" id="d-close" data-act="close" aria-label="Cerrar detalle">&times;</button></div>'+
+  '<div class="dr-body">'+
+    '<div class="chips">'+chipCal(l.cal)+'<span class="chip st">'+esc(etapaNombre(l.etapa))+'</span>'+(l.etapa==='visita'?(l.confirmada?'<span class="chip ok">horario confirmado</span>':'<span class="chip por">por confirmar</span>'):'')+chipCamp(l)+chipOrigen(l)+'</div>'+
+    (acts?'<div class="dr-actions">'+acts+'</div>':'')+
+    '<section aria-labelledby="d-h1"><h3 id="d-h1">Lo que habló con el asistente</h3><blockquote class="quote">'+esc(l.resumen||'El asistente aún no dejó un resumen.')+'<small>'+(l.origen==='en vivo'?'Resumen que dejó el agente en esta conversación.':'Resumen de ejemplo, escrito para la demo.')+'</small></blockquote></section>'+
+    '<dl class="facts" style="margin:0">'+
+      '<div class="fact"><dt>Línea</dt><dd>'+esc(l.linea)+'</dd></div>'+
+      '<div class="fact"><dt>Uso</dt><dd>'+esc(sinDato(l.uso))+'</dd></div>'+
+      '<div class="fact"><dt>Ubicación</dt><dd>'+esc(sinDato(l.ubic))+'</dd></div>'+
+      '<div class="fact"><dt>Medidas del vano</dt><dd>'+esc(sinDato(l.medidas))+'</dd></div>'+
+      '<div class="fact"><dt>Fotos</dt><dd>'+esc(sinDato(l.fotos))+'</dd></div>'+
+      '<div class="fact"><dt>¿Obra de albañilería?</dt><dd>'+esc(sinDato(l.obra))+'</dd></div>'+
+      '<div class="fact wide"><dt>Expectativa de inversión</dt><dd>'+esc(inv)+'</dd></div>'+
+      '<div class="fact"><dt>Campaña de origen</dt><dd>'+esc(l.camp!==D?'Campaña '+l.camp:'Sin dato')+'</dd></div>'+
+      '<div class="fact"><dt>Llegó por</dt><dd>'+esc(l.anuncio||'—')+'</dd></div>'+
+      '<div class="fact"><dt>Día y hora acordados</dt><dd>'+esc(l.prog||(sVisita(l)?'Acordado con el asesor':'Sin agendar'))+'</dd></div>'+
+      '<div class="fact"><dt>Última interacción</dt><dd>'+esc(fmtAgo(l.ultima))+'</dd></div>'+
+    '</dl>'+
+    '<section aria-labelledby="d-h5"><h3 id="d-h5">Señal a Meta (simulada)</h3>'+metaList+'<p class="hint">Así Meta aprendería qué anuncios traen compradores y no solo curiosos, sin esperar a la compra final. Hoy no hay CAPI conectado: en esta demo no se envía nada.</p></section>'+
+    '<section aria-labelledby="d-h2"><h3 id="d-h2">Gestión</h3><div class="form">'+
+      '<div class="field wide"><label for="d-etapa">Etapa</label><select id="d-etapa" data-chg="mover" data-id="'+esc(l.id)+'">'+etapaOpts+'</select></div>'+
+      '<div class="field"><label for="d-pf">N.º de proforma</label><input id="d-pf" type="text" maxlength="20" data-fld="proforma" data-id="'+esc(l.id)+'" value="'+esc(l.proforma||'')+'" placeholder="Ej.: PF-0150" autocomplete="off"></div>'+
+      '<div class="field"><label for="d-monto">Monto de la proforma (S/)</label><input id="d-monto" type="number" min="0" step="50" inputmode="numeric" data-fld="monto" data-id="'+esc(l.id)+'" value="'+(l.monto?esc(l.monto):'')+'" placeholder="Ej.: 6500" autocomplete="off"></div>'+
+    '</div><p class="hint">Proforma y monto son ejemplos que escribes tú; el CRM no los calcula.</p></section>'+
+    '<section aria-labelledby="d-h3"><h3 id="d-h3">Notas</h3><textarea id="d-notas" data-id="'+esc(l.id)+'" maxlength="1000" placeholder="Ej.: prefiere que le llamen después de las 6 p. m." aria-describedby="d-saved">'+esc(l.notas)+'</textarea><p class="hint" id="d-saved">Las notas se guardan solo en este navegador.</p><p class="safe">Este CRM no guarda DNI, correos ni cuentas bancarias. El pago y los datos personales los coordina el asesor por un canal propio.</p></section>'+
+    '<section aria-labelledby="d-h4"><h3 id="d-h4">Línea de tiempo</h3><ol class="tl">'+tl+'</ol></section>'+
+  '</div>';
+}
+function renderDrawer(keep){
+  var l=S.byId[S.openId];
+  if(!l){closeDrawer();return;}
+  var ae=document.activeElement,aid=ae&&ae.id&&$('#drawer').contains(ae)?ae.id:null,ss=null,se=null;
+  if(aid==='d-notas'||aid==='d-pf'||aid==='d-monto'){try{ss=ae.selectionStart;se=ae.selectionEnd;}catch(e){}}
+  $('#drawer').innerHTML=drawerHTML(l);
+  if(keep&&aid){var n=document.getElementById(aid);if(n){n.focus();if(ss!=null)try{n.setSelectionRange(ss,se);}catch(e){}}}
+}
+function openDrawer(id){
+  S.openId=id;S.lastFocus=document.activeElement;
+  var oa=S.lastFocus&&S.lastFocus.closest?S.lastFocus.closest('[data-act="open"]'):null;S.lastFocusSel=oa?'[data-act="open"][data-id="'+(oa.getAttribute('data-id')||'').replace(/"/g,'')+'"]':null;
+  var dr=$('#drawer');dr.inert=false;renderDrawer(false);
+  dr.classList.add('open');$('#scrim').classList.add('on');document.body.classList.add('lock');
+  setTimeout(function(){var c=$('#d-close');if(c)c.focus();},30);
+}
+function closeDrawer(){
+  S.openId=null;var dr=$('#drawer');dr.classList.remove('open');dr.inert=true;$('#scrim').classList.remove('on');document.body.classList.remove('lock');
+  var back=(S.lastFocus&&document.contains(S.lastFocus))?S.lastFocus:(S.lastFocusSel?$('button'+S.lastFocusSel):null);
+  if(back&&back.focus)try{back.focus();}catch(e){}
+}
+
+/* ---------- Acciones ---------- */
+function toast(html,ms){
+  var t=document.createElement('div');t.className='toast';t.innerHTML=html;$('#toasts').appendChild(t);
+  setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},ms||4200);
+  while($('#toasts').children.length>3)$('#toasts').removeChild($('#toasts').firstChild);
+}
+function mover(id,etapa,silent){
+  var l=S.byId[id];if(!l||l.etapa===etapa)return;
+  var L=loc(id);L.etapa=etapa;
+  if(etapa==='visita')L.confirmada=true; /* si el asesor la agenda a mano, el horario ya está acordado */
+  if(etapa==='nuevo'||etapa==='calificado'||etapa==='descartado'){/* sigue en el embudo o sale */}
+  if(etapa!=='nuevo'&&etapa!=='calificado'&&etapa!=='visita')L.enCurso=false;
+  var extra={visita:' Señal «Visita / llamada agendada» a Meta (simulada).',proforma:' Señal «Proforma enviada» a Meta (simulada).',adelanto:' Señal «Compra» a Meta (simulada).'}[etapa]||'';
+  addEv(id,'Movido a «'+etapaNombre(etapa)+'».'+extra);
+  saveLocal();render();
+  if(!silent)toast('<b>'+esc(l.nombre)+'</b> pasó a «'+esc(etapaNombre(etapa))+'».');
+}
+function avisar(id){
+  var l=S.byId[id];if(!l)return;
+  var L=loc(id);L.enCurso=true;
+  addEv(id,'Alerta al asesor (simulada): «Oportunidad, atiende ahora a '+l.nombre+'».');
+  saveLocal();render();
+  toast('Alerta simulada al asesor: «Oportunidad, atiende ahora a '+esc(l.nombre)+'».',5400);
+}
+function confirmarVisita(id){
+  var l=S.byId[id];if(!l)return;
+  var L=loc(id);L.confirmada=true;L.enCurso=false;
+  addEv(id,'El asesor confirmó el día y la hora'+(l.prog?' ('+l.prog+')':'')+'.');
+  saveLocal();render();
+  toast('Horario de <b>'+esc(l.nombre)+'</b> confirmado.');
+}
+function confirmar(titulo,texto,ok){
+  return new Promise(function(res){
+    var d=$('#dlg');$('#dlg-t').textContent=titulo;$('#dlg-p').textContent=texto;$('#dlg-ok').textContent=ok||'Aceptar';d.returnValue='';
+    d.addEventListener('close',function(){res(d.returnValue==='ok');},{once:true});
+    if(d.showModal)d.showModal();else res(false);
+  });
+}
+function adelanto(id){
+  var l=S.byId[id];if(!l)return;
+  if(l.etapa==='proforma'){mover(id,'adelanto');return;}
+  confirmar('Marcar adelanto recibido','Este lead todavía no está en «Proforma enviada». El adelanto se registra después de que acepta la proforma. ¿Registrarlo igual?','Sí, registrar').then(function(ok){if(ok)mover(id,'adelanto');});
+}
+function csvCell(v){
+  var s=String(v==null?'':v).replace(/\r?\n/g,' | ');
+  if(/^[=+\-@\t]/.test(s))s="'"+s;
+  return /[",;\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+}
+function buildCsv(rows){
+  var head=['nombre','whatsapp','linea','uso','ubicacion','medidas_vano','fotos','obra_albanileria','expectativa_inversion','calificacion','campana_origen','etapa','señal_a_meta_simulada','n_proforma','monto_proforma_pen','dia_hora_acordados','nota','fuente','última_interacción'];
+  var lines=[head.join(',')];
+  rows.forEach(function(l){
+    lines.push([l.nombre,digits(l.tel),l.linea,l.uso,l.ubic,l.medidas,l.fotos,l.obra,l.inv,l.cal,l.camp,etapaNombre(l.etapa),sTop(l),l.proforma,l.monto||'',l.prog,sinSecretos(l.notas),l.origen,fmtISO(l.ultima)].map(csvCell).join(','));
+  });
+  return lines.join('\r\n')+'\r\n';
+}
+function exportCsv(){
+  var rows=filtered().sort(cmp(S.sort.k));
+  if(!rows.length){toast('No hay leads para exportar con estos filtros.');return;}
+  var seg=SEGS.filter(function(s){return s.id===S.f.seg;})[0];
+  var blob=new Blob(['﻿'+buildCsv(rows)],{type:'text/csv;charset=utf-8'});
+  var p=lp(Date.now()),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='puertasyblindajes-leads-'+seg.id+'-'+p.y+'-'+pad(p.m+1)+'-'+pad(p.d)+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url);},5000);
+  toast('Se descargó el CSV con <b>'+rows.length+'</b> '+(rows.length===1?'lead':'leads')+'.');
+}
+function resetear(){
+  confirmar('Restablecer ejemplos','Se borran tus cambios guardados en este navegador (etapas, proformas y notas) y vuelven los datos de ejemplo. Los leads EN VIVO se mantienen.','Restablecer').then(function(ok){
+    if(!ok)return;
+    S.local={};try{localStorage.removeItem(LS_KEY);}catch(e){}
+    S.f={q:'',cal:'',etapa:'',linea:'',uso:'',camp:'',seg:'todos'};buildSample();
+    if(S.openId)closeDrawer();
+    render();toast('Ejemplos restablecidos.');
+  });
+}
+function clearFilters(){S.f={q:'',cal:'',etapa:'',linea:'',uso:'',camp:'',seg:'todos'};render();}
+
+/* ---------- Eventos ---------- */
+document.addEventListener('click',function(e){
+  var t=e.target.closest('[data-act]');if(!t)return;
+  var a=t.getAttribute('data-act'),id=t.getAttribute('data-id');
+  if(t.tagName==='TR'&&e.target.closest('button,a,select'))return;
+  switch(a){
+    case 'open':openDrawer(id);break;
+    case 'close':closeDrawer();break;
+    case 'view':S.view=t.getAttribute('data-v');S.ui.view=S.view;writeLS(LS_UI,S.ui);render();break;
+    case 'seg':S.f.seg=id;render();break;
+    case 'sort':var k=t.getAttribute('data-k');if(S.sort.k===k)S.sort.dir*=-1;else{S.sort.k=k;S.sort.dir=(k==='ultima')?-1:1;}render();break;
+    case 'export':exportCsv();break;
+    case 'clear':clearFilters();break;
+    case 'calls-all':S.callsAll=true;render();break;
+    case 'avisar':avisar(id);break;
+    case 'adelanto':adelanto(id);break;
+    case 'confirmar-visita':confirmarVisita(id);break;
+    case 'mover-a':mover(id,t.getAttribute('data-e'));break;
+    case 'copiar':var l2=S.byId[id];var txt=digits(l2.tel);
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(function(){toast('Número copiado.');},function(){toast('No se pudo copiar. Cópialo a mano: '+esc(txt));});}else toast('Número: '+esc(txt));break;
+  }
+});
+document.addEventListener('change',function(e){
+  var t=e.target,c=t.getAttribute&&t.getAttribute('data-chg');
+  if(c){var id=t.getAttribute('data-id');if(c==='mover')mover(id,t.value);return;}
+  var fld=t.getAttribute&&t.getAttribute('data-fld');
+  if(fld){
+    var id2=t.getAttribute('data-id'),L=loc(id2);
+    if(fld==='proforma')L.proforma=sinSecretos(clean(t.value)).slice(0,20);
+    if(fld==='monto'){var n=Math.max(0,parseFloat(t.value)||0);L.monto=n;}
+    L.ts=Date.now();addEv(id2,'Proforma actualizada ('+(fld==='proforma'?'N.º':'monto')+').');saveLocal();render();
+  }
+});
+var noteTimer=null;
+document.addEventListener('input',function(e){
+  var t=e.target;
+  if(t.id==='d-notas'){
+    var id=t.getAttribute('data-id'),L=loc(id);L.notas=sinSecretos(t.value);L.ts=Date.now();
+    clearTimeout(noteTimer);noteTimer=setTimeout(function(){saveLocal();var h=$('#d-saved');if(h)h.textContent='Guardado en tu navegador.';},350);
+    var h0=$('#d-saved');if(h0)h0.textContent='Escribiendo…';
+  }
+});
+[['#f-q','q'],['#f-cal','cal'],['#f-etapa','etapa'],['#f-linea','linea'],['#f-uso','uso'],['#f-camp','camp']].forEach(function(p){
+  $(p[0]).addEventListener(p[1]==='q'?'input':'change',function(){S.f[p[1]]=this.value;render();if(p[1]==='q'){var q=$('#f-q');q.focus();}});
+});
+$('#chk-ej').addEventListener('change',function(){S.showEj=this.checked;S.ui.showEj=S.showEj;writeLS(LS_UI,S.ui);render();});
+$('#btn-clear').addEventListener('click',clearFilters);
+$('#btn-export-top').addEventListener('click',exportCsv);
+$('#btn-reset').addEventListener('click',resetear);
+$('#scrim').addEventListener('click',closeDrawer);
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&S.openId&&!$('#dlg').open){closeDrawer();return;}
+  if(e.key==='Tab'&&S.openId&&!$('#dlg').open){
+    var f=$$('#drawer button,#drawer select,#drawer textarea,#drawer input,#drawer [href]').filter(function(x){return !x.disabled&&x.offsetParent!==null;});
+    if(!f.length)return;var first=f[0],last=f[f.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  }
+});
+/* Arrastrar entre columnas (escritorio) */
+var dragId=null;
+document.addEventListener('dragstart',function(e){var c=e.target.closest&&e.target.closest('.lead');if(!c)return;dragId=c.getAttribute('data-id');c.classList.add('dragging');try{e.dataTransfer.setData('text/plain',dragId);e.dataTransfer.effectAllowed='move';}catch(x){}});
+document.addEventListener('dragend',function(){dragId=null;$$('.lead.dragging').forEach(function(x){x.classList.remove('dragging');});$$('.col.over').forEach(function(x){x.classList.remove('over');});});
+document.addEventListener('dragover',function(e){var col=e.target.closest&&e.target.closest('.col');if(!col||!dragId)return;e.preventDefault();$$('.col.over').forEach(function(x){if(x!==col)x.classList.remove('over');});col.classList.add('over');});
+document.addEventListener('drop',function(e){var col=e.target.closest&&e.target.closest('.col');if(!col||!dragId)return;e.preventDefault();var id=dragId;col.classList.remove('over');mover(id,col.getAttribute('data-etapa'));});
+
+/* ---------- Arranque ---------- */
+buildSample();
+render();
+if(!MOCK){
+  pull();
+  setInterval(function(){if(document.visibilityState==='visible')pull();},20000);
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&Date.now()-S.liveAt>20000)pull();});
+}
+})();
+</script>
+</body>
+</html>
